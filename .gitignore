@@ -1,0 +1,44 @@
+## .NET / C#
+bin/
+obj/
+*.user
+*.suo
+.vs/
+_ReSharper*/
+*.DotSettings.user
+
+## Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+!**/packages/repositories.config
+*.ncrunch*
+
+## Visual Studio / Rider
+.idea/
+*.sln.docstates
+*.pidb
+*.svd
+.vscode/
+*.code-workspace
+
+## OS
+Thumbs.db
+.DS_Store
+
+## App-specific
+appsettings.Development.json

@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <!-- Exclude subdirectories that have their own projects; the SDK glob would
+       otherwise pick up their XAML/CS files and fail to resolve types that
+       are only referenced from those projects' own package/project references. -->
+  <ItemGroup>
+    <Compile Remove="src\**" />
+    <Page Remove="src\**" />
+    <None Remove="src\**" />
+    <EmbeddedResource Remove="src\**" />
+    <Compile Remove="tests\**" />
+    <None Remove="tests\**" />
+  </ItemGroup>
+
+</Project>

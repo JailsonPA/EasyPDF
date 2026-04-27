@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src\EasyPDF.Core\EasyPDF.Core.csproj" />
+  <Project Path="src\EasyPDF.Infrastructure\EasyPDF.Infrastructure.csproj" />
+  <Project Path="src\EasyPDF.Application\EasyPDF.Application.csproj" />
+  <Project Path="src\EasyPDF.UI\EasyPDF.UI.csproj" />
+</Solution>

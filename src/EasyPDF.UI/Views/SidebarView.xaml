@@ -1,0 +1,159 @@
+<UserControl x:Class="EasyPDF.UI.Views.SidebarView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:EasyPDF.Application.ViewModels;assembly=EasyPDF.Application"
+             xmlns:conv="clr-namespace:EasyPDF.UI.Converters"
+             xmlns:ctrl="clr-namespace:EasyPDF.UI.Controls"
+             Background="{DynamicResource SidebarBrush}"
+             Width="260">
+
+    <UserControl.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+        <conv:LevelToIndentConverter x:Key="LevelToIndent" />
+
+        <!-- Thumbnail item template — ThumbnailControl renders lazily on IsVisible=True,
+             so only the thumbnails actually scrolled into view are ever rendered. -->
+        <DataTemplate x:Key="ThumbnailTemplate" DataType="{x:Type vm:ThumbnailItemViewModel}">
+            <Border Margin="6,4" CornerRadius="4" Cursor="Hand" BorderThickness="2">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="BorderBrush" Value="{DynamicResource ThumbnailBorderBrush}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                <Setter Property="BorderBrush" Value="{DynamicResource ThumbnailSelectedBrush}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <ctrl:ThumbnailControl
+                    DataContext="{Binding}"
+                    SidebarVm="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+            </Border>
+        </DataTemplate>
+
+        <!-- TOC item template (recursive) -->
+        <HierarchicalDataTemplate x:Key="TocTemplate"
+                                  DataType="{x:Type vm:TocItemViewModel}"
+                                  ItemsSource="{Binding Children}">
+            <TextBlock Text="{Binding Title}" Cursor="Hand"
+                       Padding="{Binding Level, Converter={StaticResource LevelToIndent}}"
+                       Foreground="{DynamicResource TextPrimaryBrush}"
+                       FontSize="12" Margin="2">
+                <TextBlock.InputBindings>
+                    <MouseBinding MouseAction="LeftClick" Command="{Binding NavigateCommand}" />
+                </TextBlock.InputBindings>
+            </TextBlock>
+        </HierarchicalDataTemplate>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Tab bar -->
+        <Border Grid.Row="0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal" Height="36">
+                <Button Content="Pages" Style="{DynamicResource ToolbarButtonStyle}"
+                        FontSize="12" Padding="12,0"
+                        Command="{Binding SetTabCommand}"
+                        CommandParameter="{x:Static vm:SidebarTab.Thumbnails}" />
+                <Button Content="Contents" Style="{DynamicResource ToolbarButtonStyle}"
+                        FontSize="12" Padding="12,0"
+                        Command="{Binding SetTabCommand}"
+                        CommandParameter="{x:Static vm:SidebarTab.TableOfContents}" />
+                <Button Content="Bookmarks" Style="{DynamicResource ToolbarButtonStyle}"
+                        FontSize="12" Padding="12,0"
+                        Command="{Binding SetTabCommand}"
+                        CommandParameter="{x:Static vm:SidebarTab.Bookmarks}" />
+            </StackPanel>
+        </Border>
+
+        <!-- Tab content -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                      CanContentScroll="True">
+            <!-- Thumbnails -->
+            <ItemsControl ItemsSource="{Binding Thumbnails}"
+                          ItemTemplate="{StaticResource ThumbnailTemplate}"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling">
+                <ItemsControl.Style>
+                    <Style TargetType="ItemsControl">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding ActiveTab}" Value="{x:Static vm:SidebarTab.Thumbnails}">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ItemsControl.Style>
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- TOC TreeView -->
+        <TreeView Grid.Row="1"
+                  ItemsSource="{Binding TocItems}"
+                  ItemTemplate="{StaticResource TocTemplate}"
+                  Background="Transparent"
+                  BorderBrush="Transparent"
+                  Foreground="{DynamicResource TextPrimaryBrush}">
+            <TreeView.Style>
+                <Style TargetType="TreeView">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding ActiveTab}" Value="{x:Static vm:SidebarTab.TableOfContents}">
+                            <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TreeView.Style>
+        </TreeView>
+
+        <!-- Bookmarks ListBox -->
+        <ListBox Grid.Row="1"
+                 ItemsSource="{Binding Bookmarks}"
+                 Background="Transparent"
+                 BorderBrush="Transparent">
+            <ListBox.Style>
+                <Style TargetType="ListBox">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding ActiveTab}" Value="{x:Static vm:SidebarTab.Bookmarks}">
+                            <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </ListBox.Style>
+            <ListBox.ItemTemplate>
+                <DataTemplate DataType="{x:Type vm:BookmarkItemViewModel}">
+                    <Grid Margin="4,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Cursor="Hand">
+                            <StackPanel.InputBindings>
+                                <MouseBinding MouseAction="LeftClick" Command="{Binding NavigateCommand}" />
+                            </StackPanel.InputBindings>
+                            <TextBlock Text="{Binding Title}" FontSize="12"
+                                       Foreground="{DynamicResource TextPrimaryBrush}" />
+                            <TextBlock Text="{Binding DisplayNumber, StringFormat='Page {0}'}"
+                                       FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="✕" Width="20" Height="20"
+                                Style="{DynamicResource IconButtonStyle}"
+                                FontSize="10"
+                                Command="{Binding DeleteCommand}"
+                                ToolTip="Remove bookmark" />
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </Grid>
+</UserControl>

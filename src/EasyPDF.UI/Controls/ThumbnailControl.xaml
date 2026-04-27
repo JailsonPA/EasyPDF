@@ -1,0 +1,51 @@
+<UserControl x:Class="EasyPDF.UI.Controls.ThumbnailControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:EasyPDF.UI.Converters">
+
+    <UserControl.Resources>
+        <conv:RenderedPageToImageSourceConverter x:Key="PageConverter" />
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+        <conv:NullToVisibilityConverter x:Key="NullToVis" />
+    </UserControl.Resources>
+
+    <Grid Width="140" Height="180">
+        <!-- Rendered thumbnail -->
+        <Image Source="{Binding RenderedPage, Converter={StaticResource PageConverter}}"
+               Stretch="Uniform"
+               RenderOptions.BitmapScalingMode="HighQuality"
+               Visibility="{Binding RenderedPage, Converter={StaticResource NullToVis}}" />
+
+        <!-- Skeleton placeholder shown while loading or not yet visible -->
+        <Border Background="{DynamicResource SurfaceAltBrush}">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding RenderedPage}" Value="{x:Null}">
+                            <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <TextBlock Text="{Binding DisplayNumber}"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextDisabledBrush}"
+                       FontSize="14" />
+        </Border>
+
+        <!-- Loading indicator -->
+        <TextBlock Text="&#x231B;" FontSize="16"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}" />
+
+        <!-- Page number badge -->
+        <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch"
+                Background="#80000000" Padding="4,2">
+            <TextBlock Text="{Binding DisplayNumber}"
+                       Foreground="White" FontSize="11"
+                       HorizontalAlignment="Center" />
+        </Border>
+    </Grid>
+</UserControl>

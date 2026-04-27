@@ -1,0 +1,325 @@
+<Window x:Class="EasyPDF.UI.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:EasyPDF.Application.ViewModels;assembly=EasyPDF.Application"
+        xmlns:views="clr-namespace:EasyPDF.UI.Views"
+        xmlns:conv="clr-namespace:EasyPDF.UI.Converters"
+        xmlns:bhv="clr-namespace:EasyPDF.UI.Behaviors"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+        xmlns:core="clr-namespace:EasyPDF.Core.Models;assembly=EasyPDF.Core"
+        Title="{Binding Title}"
+        MinWidth="900" MinHeight="600"
+        Width="1280" Height="800"
+        WindowStyle="None"
+        AllowsTransparency="False"
+        Background="{DynamicResource BackgroundBrush}"
+        ResizeMode="CanResizeWithGrip">
+
+    <Window.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+        <conv:BoolToVisibilityConverter x:Key="InvBoolToVis"
+                                        TrueValue="Collapsed" FalseValue="Visible" />
+        <conv:InverseBoolConverter x:Key="InvBool" />
+        <conv:NullToVisibilityConverter x:Key="NullToVis" />
+        <conv:NullToVisibilityConverter x:Key="NullToVisInv" Invert="True" />
+        <conv:ZoomToPercentConverter x:Key="ZoomConv" />
+    </Window.Resources>
+
+    <i:Interaction.Behaviors>
+        <bhv:FileDragDropBehavior />
+    </i:Interaction.Behaviors>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="32" />   <!-- Custom title bar -->
+            <RowDefinition Height="44" />   <!-- Toolbar -->
+            <RowDefinition Height="Auto" /> <!-- Search panel (collapsible) -->
+            <RowDefinition Height="*" />    <!-- Main content -->
+            <RowDefinition Height="24" />   <!-- Status bar -->
+        </Grid.RowDefinitions>
+
+        <!-- ===== Custom Title Bar ===== -->
+        <Grid Grid.Row="0" Background="{DynamicResource WindowChromeBrush}"
+              MouseLeftButtonDown="OnTitleBarMouseDown">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- App icon + name -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0">
+                <TextBlock Text="📄" FontSize="14" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <TextBlock Text="EasyPDF" FontSize="12" FontWeight="SemiBold"
+                           Foreground="{DynamicResource WindowChromeTextBrush}"
+                           VerticalAlignment="Center" />
+            </StackPanel>
+
+            <!-- Document title -->
+            <TextBlock Grid.Column="1"
+                       Text="{Binding CurrentDocument.FileName}"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       FontSize="12" VerticalAlignment="Center"
+                       HorizontalAlignment="Center"
+                       Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}" />
+
+            <!-- Window chrome buttons -->
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <Button Content="&#xE921;" Style="{DynamicResource ChromeButtonStyle}"
+                        ToolTip="Minimize" Click="MinimizeClick" />
+                <Button x:Name="MaxRestoreButton"
+                        Content="&#xE922;" Style="{DynamicResource ChromeButtonStyle}"
+                        ToolTip="Maximize" Click="MaximizeClick" />
+                <Button Content="&#xE8BB;" Style="{DynamicResource CloseButtonStyle}"
+                        ToolTip="Close" Click="CloseClick" />
+            </StackPanel>
+        </Grid>
+
+        <!-- ===== Toolbar ===== -->
+        <Border Grid.Row="1"
+                Background="{DynamicResource ToolbarBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,0,0,1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />  <!-- Sidebar toggle + Open -->
+                    <ColumnDefinition Width="*" />     <!-- Page nav -->
+                    <ColumnDefinition Width="Auto" />  <!-- Zoom controls -->
+                    <ColumnDefinition Width="Auto" />  <!-- Right actions -->
+                </Grid.ColumnDefinitions>
+
+                <!-- Left: sidebar toggle + Open -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0">
+                    <Button Content="☰" Style="{DynamicResource ToolbarButtonStyle}"
+                            ToolTip="Toggle sidebar"
+                            Command="{Binding Sidebar.ToggleVisibilityCommand}" />
+                    <Separator Style="{DynamicResource {x:Static ToolBar.SeparatorStyleKey}}"
+                               Width="1" Height="20" Margin="4,0" />
+                    <Button Content="📂 Open" Style="{DynamicResource ToolbarButtonStyle}"
+                            Command="{Binding OpenFileCommand}" ToolTip="Open PDF (Ctrl+O)" />
+                </StackPanel>
+
+                <!-- Centre: page navigation -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal"
+                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}">
+
+                    <Button Content="⏮" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
+                            Command="{Binding Viewer.FirstPageCommand}" ToolTip="First page" />
+                    <Button Content="◀" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
+                            Command="{Binding Viewer.PreviousPageCommand}" ToolTip="Previous page (←)" />
+
+                    <Border Background="{DynamicResource SurfaceAltBrush}" Margin="4,0"
+                            CornerRadius="4" Padding="4,2">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBox x:Name="PageInputBox"
+                                     Width="36" FontSize="12"
+                                     Text="{Binding Viewer.CurrentPageIndex, Converter={StaticResource ZoomConv},
+                                                    UpdateSourceTrigger=LostFocus}"
+                                     VerticalContentAlignment="Center"
+                                     TextAlignment="Center"
+                                     BorderThickness="0" Background="Transparent"
+                                     KeyDown="PageInputKeyDown" />
+                            <TextBlock FontSize="12" Margin="2,0"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center">
+                                <Run Text="/" />
+                                <Run Text="{Binding Viewer.PageCount, Mode=OneWay}" />
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+
+                    <Button Content="▶" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
+                            Command="{Binding Viewer.NextPageCommand}" ToolTip="Next page (→)" />
+                    <Button Content="⏭" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
+                            Command="{Binding Viewer.LastPageCommand}" ToolTip="Last page" />
+                </StackPanel>
+
+                <!-- Right: zoom + bookmark + search + theme -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal"
+                            VerticalAlignment="Center" Margin="4,0"
+                            Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}">
+
+                    <Button Content="🔍−" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
+                            Command="{Binding Viewer.ZoomOutCommand}" ToolTip="Zoom out (Ctrl+−)" />
+
+                    <Border Background="{DynamicResource SurfaceAltBrush}" CornerRadius="4" Padding="6,2" Margin="2,0">
+                        <TextBox Width="52" FontSize="12" TextAlignment="Center"
+                                 BorderThickness="0" Background="Transparent"
+                                 Text="{Binding Viewer.Scale, Converter={StaticResource ZoomConv},
+                                                UpdateSourceTrigger=LostFocus}"
+                                 VerticalContentAlignment="Center"
+                                 KeyDown="ZoomInputKeyDown" />
+                    </Border>
+
+                    <Button Content="🔍+" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
+                            Command="{Binding Viewer.ZoomInCommand}" ToolTip="Zoom in (Ctrl++)" />
+                    <Button Content="⊡" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
+                            Command="{Binding Viewer.ResetZoomCommand}" ToolTip="Reset zoom (Ctrl+0)" />
+                    <Button Content="⊟" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
+                            Command="{Binding Viewer.FitToWidthModeCommand}" ToolTip="Fit to width" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="3" Orientation="Horizontal"
+                            VerticalAlignment="Center" Margin="4,0">
+                    <Button Content="🔖" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
+                            Command="{Binding AddBookmarkCommand}" ToolTip="Add bookmark (Ctrl+B)"
+                            Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}" />
+                    <Button Content="🔎" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
+                            Command="{Binding ToggleSearchCommand}" ToolTip="Search (Ctrl+F)"
+                            Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}" />
+                    <Button Content="🌙" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
+                            Command="{Binding ToggleThemeCommand}" ToolTip="Toggle dark/light theme" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ===== Search Panel (collapsible) ===== -->
+        <Border Grid.Row="2"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,0,0,1"
+                Visibility="{Binding IsSearchPanelOpen, Converter={StaticResource BoolToVis}}"
+                DataContext="{Binding Search}">
+            <Grid Margin="8,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBox Grid.Column="0"
+                         Text="{Binding Query, UpdateSourceTrigger=PropertyChanged}"
+                         FontSize="13"
+                         VerticalContentAlignment="Center"
+                         KeyDown="SearchBoxKeyDown" />
+
+                <TextBlock Grid.Column="1" Margin="8,0" VerticalAlignment="Center"
+                           FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                           Visibility="{Binding HasResults, Converter={StaticResource BoolToVis}}">
+                    <Run Text="{Binding CurrentResultIndex, Mode=OneWay, StringFormat='{}{0:D}'}" />
+                    <Run Text="/" />
+                    <Run Text="{Binding TotalResults, Mode=OneWay}" />
+                </TextBlock>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <Button Content="▲" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
+                            Command="{Binding PreviousResultCommand}" ToolTip="Previous match" />
+                    <Button Content="▼" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
+                            Command="{Binding NextResultCommand}" ToolTip="Next match" />
+                    <Button Content="Search" Style="{DynamicResource AccentButtonStyle}" Margin="4,0"
+                            Command="{Binding SearchCommand}" />
+                </StackPanel>
+
+                <Button Grid.Column="3" Content="✕" Width="28" Height="28"
+                        Style="{DynamicResource IconButtonStyle}"
+                        Command="{Binding ClearSearchCommand}"
+                        ToolTip="Close search" />
+            </Grid>
+        </Border>
+
+        <!-- ===== Main Content ===== -->
+        <Grid Grid.Row="3">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />  <!-- Sidebar -->
+                <ColumnDefinition Width="*" />     <!-- Viewer -->
+            </Grid.ColumnDefinitions>
+
+            <!-- Sidebar -->
+            <Border Grid.Column="0"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="0,0,1,0"
+                    Visibility="{Binding Sidebar.IsVisible, Converter={StaticResource BoolToVis}}">
+                <views:SidebarView DataContext="{Binding Sidebar}" />
+            </Border>
+
+            <!-- PDF Viewer or Welcome screen -->
+            <Grid Grid.Column="1">
+                <!-- Welcome / empty state -->
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Visibility="{Binding HasDocument, Converter={StaticResource InvBoolToVis}}">
+                    <TextBlock Text="📄" FontSize="64" HorizontalAlignment="Center"
+                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                    <TextBlock Text="EasyPDF" FontSize="28" FontWeight="Light"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               HorizontalAlignment="Center" Margin="0,8,0,0" />
+                    <TextBlock Text="Open a PDF to get started"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               HorizontalAlignment="Center" Margin="0,4,0,24" />
+                    <Button Content="Open PDF…"
+                            Style="{DynamicResource AccentButtonStyle}"
+                            Command="{Binding OpenFileCommand}"
+                            HorizontalAlignment="Center" Padding="24,8" />
+
+                    <!-- Recent files -->
+                    <TextBlock Text="Recent files" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               HorizontalAlignment="Center" Margin="0,32,0,8" />
+                    <ItemsControl ItemsSource="{Binding RecentFiles}"
+                                  HorizontalAlignment="Center" MaxWidth="420">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type core:RecentFile}">
+                                <Button Style="{DynamicResource ToolbarButtonStyle}"
+                                        HorizontalAlignment="Stretch"
+                                        Command="{Binding DataContext.OpenRecentCommand,
+                                                          RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CommandParameter="{Binding}">
+                                    <StackPanel HorizontalAlignment="Left" Margin="4,2">
+                                        <TextBlock Text="{Binding FileName}" FontSize="13"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                                        <TextBlock Text="{Binding FilePath}"
+                                                   FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   TextTrimming="CharacterEllipsis" MaxWidth="380" />
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- Main viewer -->
+                <views:PdfViewerView DataContext="{Binding Viewer}"
+                                     Visibility="{Binding HasDocument,
+                                                          RelativeSource={RelativeSource AncestorType=Window},
+                                                          Converter={StaticResource BoolToVis}}" />
+
+                <!-- Loading overlay -->
+                <Border Background="#AA000000"
+                        Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock Text="Opening…" Foreground="White" FontSize="18" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!-- ===== Status Bar ===== -->
+        <Border Grid.Row="4"
+                Background="{DynamicResource ToolbarBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,1,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0"
+                           Text="{Binding StatusMessage}"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           FontSize="11" VerticalAlignment="Center" Margin="8,0" />
+
+                <TextBlock Grid.Column="1"
+                           FontSize="11" VerticalAlignment="Center" Margin="8,0"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}">
+                    <Run Text="{Binding Viewer.ZoomPercent, Mode=OneWay}" />
+                    <Run Text="  ·  " />
+                    <Run Text="{Binding CurrentDocument.PageCount, Mode=OneWay}" />
+                    <Run Text="pages" />
+                </TextBlock>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
