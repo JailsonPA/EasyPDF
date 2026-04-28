@@ -43,8 +43,8 @@
                     <ctrl:PdfPageControl
                         DataContext="{Binding}"
                         ViewerVm="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                        Width="{Binding DisplayWidth}"
-                        Height="{Binding DisplayHeight}"
+                        Width="{Binding ControlWidth}"
+                        Height="{Binding ControlHeight}"
                         Margin="0,4" />
                 </DataTemplate>
             </ItemsControl.ItemTemplate>

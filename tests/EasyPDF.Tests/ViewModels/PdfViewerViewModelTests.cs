@@ -168,11 +168,12 @@ public sealed class PdfViewerViewModelTests
     [Fact]
     public void FitToWidth_ComputesScaleFromViewportWidth()
     {
-        // Pages are 595 pt wide. Viewport 615 px → scale = (615 - 20) / 595 = 1.0
+        // Pages are 595 pt wide. Viewport 631 px → scale = (631 - 36) / 595 = 1.0
+        // 36 = 20 (scrollbar/padding safety) + 16 (Border Margin="8" × 2 sides)
         var vm = Make();
         vm.LoadDocument(MakeDoc(3, widthPt: 595));
 
-        vm.FitToWidth(615.0);
+        vm.FitToWidth(631.0);
 
         Assert.Equal(1.0, vm.Scale, precision: 5);
         Assert.True(vm.IsFitToWidth);

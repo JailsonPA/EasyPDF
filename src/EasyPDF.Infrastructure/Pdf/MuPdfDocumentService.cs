@@ -27,6 +27,7 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
 
     // NoRecursion: acquiring a second lock on the same thread is a bug, not a feature.
     private readonly ReaderWriterLockSlim _docLock = new(LockRecursionPolicy.NoRecursion);
+    private static readonly TimeSpan WriteLockTimeout = TimeSpan.FromSeconds(5);
 
     // volatile so IsOpen reads outside the lock see the freshest value on all CPUs.
     private volatile MuPDFDocument? _muDoc;
@@ -74,7 +75,9 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
 
     private void OpenCore(string filePath)
     {
-        _docLock.EnterWriteLock();
+        if (!_docLock.TryEnterWriteLock(WriteLockTimeout))
+            throw new TimeoutException("Could not acquire write lock to open PDF — a render operation may be stuck.");
+
         try
         {
             CloseCore();
@@ -112,7 +115,8 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
 
     public void Close()
     {
-        _docLock.EnterWriteLock();
+        if (!_docLock.TryEnterWriteLock(WriteLockTimeout))
+            throw new TimeoutException("Could not acquire write lock to close PDF — a render operation may be stuck.");
         try { CloseCore(); }
         finally { _docLock.ExitWriteLock(); }
     }

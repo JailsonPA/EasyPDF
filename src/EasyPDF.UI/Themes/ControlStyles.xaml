@@ -216,6 +216,38 @@
         </Setter>
     </Style>
 
+    <!-- ===== Search Progress Bar ===== -->
+    <Style x:Key="SearchProgressBarStyle" TargetType="ProgressBar">
+        <Setter Property="Height" Value="2" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ProgressBar">
+                    <Grid>
+                        <Border Background="{TemplateBinding Background}" />
+                        <Border x:Name="PART_Track" Background="Transparent" />
+                        <Border x:Name="PART_Indicator"
+                                Background="{TemplateBinding Foreground}"
+                                HorizontalAlignment="Left" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsIndeterminate" Value="True">
+                            <Setter TargetName="PART_Indicator" Property="Visibility" Value="Collapsed" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===== MDL2 Icon Button (Segoe MDL2 Assets glyph, square) ===== -->
+    <Style x:Key="Mdl2IconButtonStyle" TargetType="Button" BasedOn="{StaticResource ToolbarButtonStyle}">
+        <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+        <Setter Property="FontSize" Value="14" />
+    </Style>
+
     <Style x:Key="CloseButtonStyle" TargetType="Button" BasedOn="{StaticResource ChromeButtonStyle}">
         <Style.Triggers>
             <Trigger Property="IsMouseOver" Value="True">

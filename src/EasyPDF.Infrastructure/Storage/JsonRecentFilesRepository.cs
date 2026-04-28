@@ -9,6 +9,12 @@ public sealed class JsonRecentFilesRepository : IRecentFilesRepository
     private const int MaxEntries = 20;
     private static readonly JsonSerializerOptions _opts = new() { WriteIndented = true };
     private readonly SemaphoreSlim _lock = new(1, 1);
+    private readonly string _filePath;
+
+    public JsonRecentFilesRepository(string filePath)
+    {
+        _filePath = filePath;
+    }
 
     public async Task<IReadOnlyList<RecentFile>> GetAllAsync(CancellationToken ct = default)
     {
@@ -51,17 +57,17 @@ public sealed class JsonRecentFilesRepository : IRecentFilesRepository
         finally { _lock.Release(); }
     }
 
-    private static async Task<List<RecentFile>> LoadAsync(CancellationToken ct)
+    private async Task<List<RecentFile>> LoadAsync(CancellationToken ct)
     {
-        var path = AppDataPaths.RecentFilesFile;
-        if (!File.Exists(path)) return [];
-        await using var stream = File.OpenRead(path);
+        if (!File.Exists(_filePath)) return [];
+        await using var stream = File.OpenRead(_filePath);
+        if (stream.Length == 0) return [];
         return await JsonSerializer.DeserializeAsync<List<RecentFile>>(stream, _opts, ct) ?? [];
     }
 
-    private static async Task SaveAsync(List<RecentFile> list, CancellationToken ct)
+    private async Task SaveAsync(List<RecentFile> list, CancellationToken ct)
     {
-        await using var stream = File.Create(AppDataPaths.RecentFilesFile);
+        await using var stream = File.Create(_filePath);
         await JsonSerializer.SerializeAsync(stream, list, _opts, ct);
     }
 }

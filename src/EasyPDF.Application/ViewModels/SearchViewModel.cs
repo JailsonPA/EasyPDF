@@ -32,6 +32,10 @@ public sealed partial class SearchViewModel : ObservableObject
     [ObservableProperty]
     private int _searchProgress;
 
+    /// <summary>Total pages in the current document — used as Maximum for the search progress bar.</summary>
+    [ObservableProperty]
+    private int _totalPages;
+
     public bool HasResults => TotalResults > 0;
     public ObservableCollection<SearchResult> Results { get; } = [];
 

@@ -23,7 +23,13 @@ public sealed partial class TocItemViewModel : ObservableObject
         PageIndex = entry.PageIndex;
         Level = entry.Level;
         Children = new ObservableCollection<TocItemViewModel>(
-            entry.Children.Select(c => new TocItemViewModel(c) { NavigateRequested = NavigateRequested }));
+            entry.Children.Select(c =>
+            {
+                var child = new TocItemViewModel(c);
+                // Bubble up: child click → parent NavigateRequested → SidebarViewModel handler
+                child.NavigateRequested += (_, item) => NavigateRequested?.Invoke(this, item);
+                return child;
+            }));
     }
 
     [RelayCommand]

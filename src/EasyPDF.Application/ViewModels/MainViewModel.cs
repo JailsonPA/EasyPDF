@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using EasyPDF.Application.Interfaces;
 using EasyPDF.Core.Interfaces;
 using EasyPDF.Core.Models;
 using Microsoft.Extensions.Logging;
@@ -10,12 +11,13 @@ namespace EasyPDF.Application.ViewModels;
 /// <summary>
 /// Top-level coordinator: owns the document lifecycle and delegates to child ViewModels.
 /// </summary>
-public sealed partial class MainViewModel : ObservableObject
+public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
 {
     private readonly IPdfDocumentService _docService;
     private readonly IRecentFilesRepository _recentRepo;
     private readonly IDialogService _dialogService;
     private readonly IThemeService _themeService;
+    private readonly AppSettings _settings;
     private readonly ILogger<MainViewModel> _logger;
 
     [ObservableProperty]
@@ -52,6 +54,7 @@ public sealed partial class MainViewModel : ObservableObject
         IRecentFilesRepository recentRepo,
         IDialogService dialogService,
         IThemeService themeService,
+        AppSettings settings,
         PdfViewerViewModel viewer,
         SidebarViewModel sidebar,
         SearchViewModel search,
@@ -61,6 +64,7 @@ public sealed partial class MainViewModel : ObservableObject
         _recentRepo = recentRepo;
         _dialogService = dialogService;
         _themeService = themeService;
+        _settings = settings;
         _logger = logger;
 
         Viewer = viewer;
@@ -97,13 +101,24 @@ public sealed partial class MainViewModel : ObservableObject
         await LoadDocumentAsync(recent.FilePath);
 
     [RelayCommand]
-    private void CloseDocument()
+    private async Task CloseDocumentAsync()
     {
-        _docService.Close();
+        try
+        {
+            _docService.Close();
+        }
+        catch (TimeoutException ex)
+        {
+            _logger.LogError(ex, "Timed out waiting for renders to finish before closing document");
+            await _dialogService.ShowErrorAsync("Close Failed", "The document could not be closed because a render operation is taking too long. Try again in a moment.");
+            return;
+        }
+
         CurrentDocument = null;
         Viewer.Clear();
         Sidebar.Clear();
         Search.ClearSearchCommand.Execute(null);
+        Search.TotalPages = 0;
         SetStatus("Document closed.");
     }
 
@@ -149,6 +164,16 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        var fileSize = new FileInfo(filePath).Length;
+        if (fileSize > _settings.LargeFileSizeBytes)
+        {
+            double sizeMb = fileSize / (1024.0 * 1024.0);
+            bool proceed = await _dialogService.ConfirmAsync(
+                "Large File",
+                $"This file is {sizeMb:F0} MB and may be slow to open or use significant memory.\n\nOpen it anyway?");
+            if (!proceed) return;
+        }
+
         IsLoading = true;
         SetStatus("Opening…");
 
@@ -159,12 +184,13 @@ public sealed partial class MainViewModel : ObservableObject
 
             Viewer.LoadDocument(doc);
             await Sidebar.LoadDocumentAsync(doc);
+            Search.TotalPages = doc.PageCount;
 
             await _recentRepo.AddOrUpdateAsync(new RecentFile(
                 doc.FilePath, doc.FileName, doc.PageCount,
                 doc.FileSizeBytes, DateTime.UtcNow));
 
-            RefreshRecentFiles();
+            await RefreshRecentFilesAsync();
             SetStatus($"Opened {doc.FileName}  ·  {doc.PageCount} pages");
         }
         catch (Exception ex)
@@ -179,7 +205,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    private async void RefreshRecentFiles()
+    private async Task RefreshRecentFilesAsync()
     {
         try
         {

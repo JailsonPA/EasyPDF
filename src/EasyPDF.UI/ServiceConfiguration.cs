@@ -1,3 +1,4 @@
+using EasyPDF.Application;
 using EasyPDF.Application.ViewModels;
 using EasyPDF.Core.Interfaces;
 using EasyPDF.Infrastructure.Pdf;
@@ -25,9 +26,7 @@ internal static class ServiceConfiguration
         //   - Debug provider  → all levels (filtered by appsettings.json per category)
         //   - File provider   → Warning+ only (independent of category config)
         //     Logs land in %AppData%\EasyPDF\logs\easypdf-YYYY-MM-DD.log
-        var logDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "EasyPDF", "logs");
+        var logDir = AppDataPaths.LogsDirectory;
 
         services.AddLogging(b => b
             .SetMinimumLevel(LogLevel.Debug)
@@ -53,9 +52,15 @@ internal static class ServiceConfiguration
         services.AddSingleton<ISearchService, MuPdfSearchService>();
 
         // Storage
-        services.AddSingleton<IBookmarkRepository, JsonBookmarkRepository>();
-        services.AddSingleton<IAnnotationRepository, JsonAnnotationRepository>();
-        services.AddSingleton<IRecentFilesRepository, JsonRecentFilesRepository>();
+        services.AddSingleton<IBookmarkRepository>(_ => new JsonBookmarkRepository(AppDataPaths.BookmarksFile));
+        services.AddSingleton<IRecentFilesRepository>(_ => new JsonRecentFilesRepository(AppDataPaths.RecentFilesFile));
+
+        // App settings (values from appsettings.json with safe defaults)
+        services.AddSingleton(_ =>
+        {
+            int largeMb = config.GetValue<int>("LargeFileSizeMb", 500);
+            return new AppSettings { LargeFileSizeBytes = (long)largeMb * 1024 * 1024 };
+        });
 
         // UI Services
         services.AddSingleton<IThemeService, WpfThemeService>();

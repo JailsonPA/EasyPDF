@@ -49,7 +49,7 @@ public sealed class BulkObservableCollectionTests
     {
         var col = new BulkObservableCollection<int>();
         var props = new List<string?>();
-        col.PropertyChanged += (_, e) => props.Add(e.PropertyName);
+        ((INotifyPropertyChanged)col).PropertyChanged += (_, e) => props.Add(e.PropertyName);
 
         col.ReplaceAll([1, 2, 3]);
 

@@ -55,7 +55,14 @@ public partial class PdfPageControl : UserControl
         _boundPage = e.NewValue as PageViewModel;
 
         if (_boundPage is not null)
+        {
             _boundPage.PropertyChanged += OnPagePropertyChanged;
+            // Recycled containers may miss the RenderedPage=null PropertyChanged that fires
+            // during a scale change — if the DataContext swap races with OnScaleChanged.
+            // Trigger here so the page always renders when a control is assigned to it.
+            if (_boundPage.RenderedPage is null && IsVisible)
+                TriggerRender();
+        }
     }
 
     private void OnPagePropertyChanged(object? sender, PropertyChangedEventArgs e)

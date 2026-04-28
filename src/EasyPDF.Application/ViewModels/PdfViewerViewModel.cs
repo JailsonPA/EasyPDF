@@ -151,7 +151,8 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
         _applyingFitToWidth = true;
         try
         {
-            Scale = Math.Clamp((viewportWidth - 20) / firstPage.WidthPt, MinScale, MaxScale);
+            // 20 = scrollbar/padding safety margin; 16 = Border Margin="8" × 2 sides (ControlWidth offset)
+        Scale = Math.Clamp((viewportWidth - 36) / firstPage.WidthPt, MinScale, MaxScale);
             IsFitToWidth = true;
         }
         finally
@@ -259,10 +260,19 @@ public sealed partial class PageViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DisplayWidth))]
     [NotifyPropertyChangedFor(nameof(DisplayHeight))]
+    [NotifyPropertyChangedFor(nameof(ControlWidth))]
+    [NotifyPropertyChangedFor(nameof(ControlHeight))]
     private double _scale = 1.5;
 
-    public double DisplayWidth => WidthPt * Scale;
+    public double DisplayWidth  => WidthPt  * Scale;
     public double DisplayHeight => HeightPt * Scale;
+
+    // ControlWidth/Height = page content + 8 px shadow margin on each side (matches
+    // PdfPageControl.xaml Border Margin="8"). The PdfPageControl is sized to these
+    // values so the Border's inner content area equals DisplayWidth × DisplayHeight
+    // exactly — Image Stretch="None" then renders the bitmap at 1:1, no WPF scaling.
+    public double ControlWidth  => DisplayWidth  + 16;
+    public double ControlHeight => DisplayHeight + 16;
 
     [ObservableProperty]
     private RenderedPage? _renderedPage;

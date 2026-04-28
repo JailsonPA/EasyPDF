@@ -23,6 +23,7 @@
         <conv:NullToVisibilityConverter x:Key="NullToVis" />
         <conv:NullToVisibilityConverter x:Key="NullToVisInv" Invert="True" />
         <conv:ZoomToPercentConverter x:Key="ZoomConv" />
+        <conv:OneBasedIndexConverter x:Key="PageConv" />
     </Window.Resources>
 
     <i:Interaction.Behaviors>
@@ -66,11 +67,14 @@
             <!-- Window chrome buttons -->
             <StackPanel Grid.Column="2" Orientation="Horizontal">
                 <Button Content="&#xE921;" Style="{DynamicResource ChromeButtonStyle}"
+                        AutomationProperties.Name="Minimize"
                         ToolTip="Minimize" Click="MinimizeClick" />
                 <Button x:Name="MaxRestoreButton"
                         Content="&#xE922;" Style="{DynamicResource ChromeButtonStyle}"
+                        AutomationProperties.Name="Maximize"
                         ToolTip="Maximize" Click="MaximizeClick" />
                 <Button Content="&#xE8BB;" Style="{DynamicResource CloseButtonStyle}"
+                        AutomationProperties.Name="Close"
                         ToolTip="Close" Click="CloseClick" />
             </StackPanel>
         </Grid>
@@ -91,12 +95,19 @@
                 <!-- Left: sidebar toggle + Open -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0">
                     <Button Content="☰" Style="{DynamicResource ToolbarButtonStyle}"
+                            AutomationProperties.Name="Toggle sidebar"
                             ToolTip="Toggle sidebar"
                             Command="{Binding Sidebar.ToggleVisibilityCommand}" />
                     <Separator Style="{DynamicResource {x:Static ToolBar.SeparatorStyleKey}}"
                                Width="1" Height="20" Margin="4,0" />
-                    <Button Content="📂 Open" Style="{DynamicResource ToolbarButtonStyle}"
-                            Command="{Binding OpenFileCommand}" ToolTip="Open PDF (Ctrl+O)" />
+                    <Button Style="{DynamicResource ToolbarButtonStyle}"
+                            Command="{Binding OpenFileCommand}" ToolTip="Open PDF (Ctrl+O)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE8E5;" FontFamily="Segoe MDL2 Assets"
+                                       FontSize="14" VerticalAlignment="Center" Margin="0,0,5,0" />
+                            <TextBlock Text="Open" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
 
                 <!-- Centre: page navigation -->
@@ -105,16 +116,19 @@
                             Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}">
 
                     <Button Content="⏮" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
+                            AutomationProperties.Name="First page"
                             Command="{Binding Viewer.FirstPageCommand}" ToolTip="First page" />
                     <Button Content="◀" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
+                            AutomationProperties.Name="Previous page"
                             Command="{Binding Viewer.PreviousPageCommand}" ToolTip="Previous page (←)" />
 
                     <Border Background="{DynamicResource SurfaceAltBrush}" Margin="4,0"
                             CornerRadius="4" Padding="4,2">
                         <StackPanel Orientation="Horizontal">
                             <TextBox x:Name="PageInputBox"
+                                     AutomationProperties.Name="Page number"
                                      Width="36" FontSize="12"
-                                     Text="{Binding Viewer.CurrentPageIndex, Converter={StaticResource ZoomConv},
+                                     Text="{Binding Viewer.CurrentPageIndex, Converter={StaticResource PageConv},
                                                     UpdateSourceTrigger=LostFocus}"
                                      VerticalContentAlignment="Center"
                                      TextAlignment="Center"
@@ -130,8 +144,10 @@
                     </Border>
 
                     <Button Content="▶" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
+                            AutomationProperties.Name="Next page"
                             Command="{Binding Viewer.NextPageCommand}" ToolTip="Next page (→)" />
                     <Button Content="⏭" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
+                            AutomationProperties.Name="Last page"
                             Command="{Binding Viewer.LastPageCommand}" ToolTip="Last page" />
                 </StackPanel>
 
@@ -140,11 +156,13 @@
                             VerticalAlignment="Center" Margin="4,0"
                             Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}">
 
-                    <Button Content="🔍−" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
+                    <Button Content="&#xE71F;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
+                            AutomationProperties.Name="Zoom out"
                             Command="{Binding Viewer.ZoomOutCommand}" ToolTip="Zoom out (Ctrl+−)" />
 
                     <Border Background="{DynamicResource SurfaceAltBrush}" CornerRadius="4" Padding="6,2" Margin="2,0">
                         <TextBox Width="52" FontSize="12" TextAlignment="Center"
+                                 AutomationProperties.Name="Zoom level"
                                  BorderThickness="0" Background="Transparent"
                                  Text="{Binding Viewer.Scale, Converter={StaticResource ZoomConv},
                                                 UpdateSourceTrigger=LostFocus}"
@@ -152,23 +170,29 @@
                                  KeyDown="ZoomInputKeyDown" />
                     </Border>
 
-                    <Button Content="🔍+" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
+                    <Button Content="&#xE8A3;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
+                            AutomationProperties.Name="Zoom in"
                             Command="{Binding Viewer.ZoomInCommand}" ToolTip="Zoom in (Ctrl++)" />
                     <Button Content="⊡" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
+                            AutomationProperties.Name="Reset zoom"
                             Command="{Binding Viewer.ResetZoomCommand}" ToolTip="Reset zoom (Ctrl+0)" />
                     <Button Content="⊟" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
+                            AutomationProperties.Name="Fit to width"
                             Command="{Binding Viewer.FitToWidthModeCommand}" ToolTip="Fit to width" />
                 </StackPanel>
 
                 <StackPanel Grid.Column="3" Orientation="Horizontal"
                             VerticalAlignment="Center" Margin="4,0">
-                    <Button Content="🔖" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
+                    <Button Content="&#xE1C3;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
+                            AutomationProperties.Name="Add bookmark"
                             Command="{Binding AddBookmarkCommand}" ToolTip="Add bookmark (Ctrl+B)"
                             Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}" />
-                    <Button Content="🔎" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
+                    <Button Content="&#xE721;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
+                            AutomationProperties.Name="Toggle search panel"
                             Command="{Binding ToggleSearchCommand}" ToolTip="Search (Ctrl+F)"
                             Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}" />
-                    <Button Content="🌙" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
+                    <Button Content="&#xE793;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
+                            AutomationProperties.Name="Toggle theme"
                             Command="{Binding ToggleThemeCommand}" ToolTip="Toggle dark/light theme" />
                 </StackPanel>
             </Grid>
@@ -181,41 +205,61 @@
                 BorderThickness="0,0,0,1"
                 Visibility="{Binding IsSearchPanelOpen, Converter={StaticResource BoolToVis}}"
                 DataContext="{Binding Search}">
-            <Grid Margin="8,4">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
-                <TextBox Grid.Column="0"
-                         Text="{Binding Query, UpdateSourceTrigger=PropertyChanged}"
-                         FontSize="13"
-                         VerticalContentAlignment="Center"
-                         KeyDown="SearchBoxKeyDown" />
+                <!-- Search controls row -->
+                <Grid Grid.Row="0" Margin="8,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Column="1" Margin="8,0" VerticalAlignment="Center"
-                           FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
-                           Visibility="{Binding HasResults, Converter={StaticResource BoolToVis}}">
-                    <Run Text="{Binding CurrentResultIndex, Mode=OneWay, StringFormat='{}{0:D}'}" />
-                    <Run Text="/" />
-                    <Run Text="{Binding TotalResults, Mode=OneWay}" />
-                </TextBlock>
+                    <TextBox Grid.Column="0"
+                             AutomationProperties.Name="Search query"
+                             Text="{Binding Query, UpdateSourceTrigger=PropertyChanged}"
+                             FontSize="13"
+                             VerticalContentAlignment="Center"
+                             KeyDown="SearchBoxKeyDown" />
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <Button Content="▲" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
-                            Command="{Binding PreviousResultCommand}" ToolTip="Previous match" />
-                    <Button Content="▼" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
-                            Command="{Binding NextResultCommand}" ToolTip="Next match" />
-                    <Button Content="Search" Style="{DynamicResource AccentButtonStyle}" Margin="4,0"
-                            Command="{Binding SearchCommand}" />
-                </StackPanel>
+                    <TextBlock Grid.Column="1" Margin="8,0" VerticalAlignment="Center"
+                               FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                               Visibility="{Binding HasResults, Converter={StaticResource BoolToVis}}">
+                        <Run Text="{Binding CurrentResultIndex, Mode=OneWay, StringFormat='{}{0:D}'}" />
+                        <Run Text="/" />
+                        <Run Text="{Binding TotalResults, Mode=OneWay}" />
+                    </TextBlock>
 
-                <Button Grid.Column="3" Content="✕" Width="28" Height="28"
-                        Style="{DynamicResource IconButtonStyle}"
-                        Command="{Binding ClearSearchCommand}"
-                        ToolTip="Close search" />
+                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                        <Button Content="▲" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
+                                AutomationProperties.Name="Previous search result"
+                                Command="{Binding PreviousResultCommand}" ToolTip="Previous match" />
+                        <Button Content="▼" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
+                                AutomationProperties.Name="Next search result"
+                                Command="{Binding NextResultCommand}" ToolTip="Next match" />
+                        <Button Content="Search" Style="{DynamicResource AccentButtonStyle}" Margin="4,0"
+                                Command="{Binding SearchCommand}" />
+                    </StackPanel>
+
+                    <Button Grid.Column="3" Content="✕" Width="28" Height="28"
+                            Style="{DynamicResource IconButtonStyle}"
+                            AutomationProperties.Name="Close search"
+                            Command="{Binding ClearSearchCommand}"
+                            ToolTip="Close search" />
+                </Grid>
+
+                <!-- Progress bar: spans full width, visible only while searching -->
+                <ProgressBar Grid.Row="1"
+                             Style="{DynamicResource SearchProgressBarStyle}"
+                             Minimum="0"
+                             Maximum="{Binding TotalPages, Mode=OneWay}"
+                             Value="{Binding SearchProgress, Mode=OneWay}"
+                             Visibility="{Binding IsSearching, Converter={StaticResource BoolToVis}}" />
             </Grid>
         </Border>
 

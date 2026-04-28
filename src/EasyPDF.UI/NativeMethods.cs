@@ -4,7 +4,9 @@ namespace EasyPDF.UI;
 
 internal static class NativeMethods
 {
-    internal const int SW_RESTORE = 9;
+    internal const int SW_RESTORE    = 9;
+    internal const int WM_NCHITTEST  = 0x0084;
+    internal const int HTMAXBUTTON   = 9;
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

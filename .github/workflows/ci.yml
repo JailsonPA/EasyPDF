@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      # Restore the UI project (WPF/native) and the test project separately
+      # because EasyPDF.slnx does not include the test project.
+      - name: Restore – UI
+        run: dotnet restore src/EasyPDF.UI/EasyPDF.UI.csproj
+
+      - name: Restore – Tests
+        run: dotnet restore tests/EasyPDF.Tests/EasyPDF.Tests.csproj
+
+      - name: Build – UI (Release)
+        run: dotnet build src/EasyPDF.UI/EasyPDF.UI.csproj --no-restore --configuration Release
+
+      - name: Build – Tests (Release)
+        run: dotnet build tests/EasyPDF.Tests/EasyPDF.Tests.csproj --no-restore --configuration Release
+
+      - name: Run Tests
+        run: >
+          dotnet test tests/EasyPDF.Tests/EasyPDF.Tests.csproj
+          --no-build
+          --configuration Release
+          --logger "trx;LogFileName=results.trx"
+          --results-directory TestResults
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/*.trx
+          retention-days: 14

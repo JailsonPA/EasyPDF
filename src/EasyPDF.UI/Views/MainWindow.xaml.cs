@@ -1,12 +1,14 @@
 using EasyPDF.Application.ViewModels;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Interop;
 
 namespace EasyPDF.UI.Views;
 
 public partial class MainWindow : Window
 {
     private readonly MainViewModel _vm;
+    private HwndSource? _hwndSource;
 
     public MainWindow(MainViewModel vm)
     {
@@ -18,7 +20,46 @@ public partial class MainWindow : Window
     protected override async void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
+        _hwndSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
+        _hwndSource?.AddHook(WndProc);
         await _vm.InitializeAsync();
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _hwndSource?.RemoveHook(WndProc);
+        base.OnClosed(e);
+    }
+
+    // ─── Windows 11 Snap Layout support ────────────────────────────────────────
+    // With WindowStyle="None" the OS has no maximize button to detect, so the
+    // Snap Layout popup never appears on hover. We intercept WM_NCHITTEST and
+    // return HTMAXBUTTON when the cursor is over MaxRestoreButton, which tells
+    // the OS to treat that region as the native maximize button.
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == NativeMethods.WM_NCHITTEST && MaxRestoreButton.ActualWidth > 0)
+        {
+            // lParam packs screen coordinates as signed 16-bit words.
+            int screenX = unchecked((short)(lParam.ToInt32() & 0xFFFF));
+            int screenY = unchecked((short)((lParam.ToInt32() >> 16) & 0xFFFF));
+            var cursorScreen = new Point(screenX, screenY);
+
+            // Convert both corners via PointToScreen so the Rect is in physical
+            // pixels — same coordinate space as the lParam cursor position.
+            // Using PointToScreen for both points is DPI-correct at any scale.
+            var topLeft     = MaxRestoreButton.PointToScreen(new Point(0, 0));
+            var bottomRight = MaxRestoreButton.PointToScreen(
+                new Point(MaxRestoreButton.ActualWidth, MaxRestoreButton.ActualHeight));
+
+            if (new Rect(topLeft, bottomRight).Contains(cursorScreen))
+            {
+                handled = true;
+                return new IntPtr(NativeMethods.HTMAXBUTTON);
+            }
+        }
+        return IntPtr.Zero;
     }
 
     // ─── Custom window chrome ───────────────────────────────────────────────

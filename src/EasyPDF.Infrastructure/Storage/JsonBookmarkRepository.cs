@@ -8,6 +8,12 @@ public sealed class JsonBookmarkRepository : IBookmarkRepository
 {
     private static readonly JsonSerializerOptions _opts = new() { WriteIndented = true };
     private readonly SemaphoreSlim _lock = new(1, 1);
+    private readonly string _filePath;
+
+    public JsonBookmarkRepository(string filePath)
+    {
+        _filePath = filePath;
+    }
 
     public async Task<IReadOnlyList<Bookmark>> GetAllAsync(string documentPath, CancellationToken ct = default)
     {
@@ -59,16 +65,16 @@ public sealed class JsonBookmarkRepository : IBookmarkRepository
         finally { _lock.Release(); }
     }
 
-    private static async Task<List<Bookmark>> LoadAsync(CancellationToken ct)
+    private async Task<List<Bookmark>> LoadAsync(CancellationToken ct)
     {
-        if (!File.Exists(AppDataPaths.BookmarksFile)) return [];
-        await using var s = File.OpenRead(AppDataPaths.BookmarksFile);
+        if (!File.Exists(_filePath)) return [];
+        await using var s = File.OpenRead(_filePath);
         return await JsonSerializer.DeserializeAsync<List<Bookmark>>(s, _opts, ct) ?? [];
     }
 
-    private static async Task SaveAsync(List<Bookmark> list, CancellationToken ct)
+    private async Task SaveAsync(List<Bookmark> list, CancellationToken ct)
     {
-        await using var s = File.Create(AppDataPaths.BookmarksFile);
+        await using var s = File.Create(_filePath);
         await JsonSerializer.SerializeAsync(s, list, _opts, ct);
     }
 }

@@ -16,6 +16,7 @@ public sealed partial class SidebarViewModel : ObservableObject, IDisposable
     private readonly ILogger<SidebarViewModel> _logger;
 
     private CancellationTokenSource _thumbCts = new();
+    private readonly Dictionary<int, ThumbnailItemViewModel> _thumbIndex = new();
 
     [ObservableProperty]
     private SidebarTab _activeTab = SidebarTab.Thumbnails;
@@ -48,7 +49,15 @@ public sealed partial class SidebarViewModel : ObservableObject, IDisposable
 
         // Populate thumbnail VMs with no rendered content — ThumbnailControl renders
         // each thumbnail lazily when its container enters the visible viewport.
-        Thumbnails.ReplaceAll(document.Pages.Select(p => new ThumbnailItemViewModel(p.Index)));
+        _thumbIndex.Clear();
+        var thumbVms = document.Pages.Select(p =>
+        {
+            var vm = new ThumbnailItemViewModel(p.Index);
+            vm.NavigateRequested += (_, item) => PageNavigationRequested?.Invoke(this, item.PageIndex);
+            _thumbIndex[p.Index] = vm;
+            return vm;
+        }).ToList();
+        Thumbnails.ReplaceAll(thumbVms);
 
         TocItems.ReplaceAll(document.TableOfContents.Select(entry =>
         {
@@ -67,8 +76,7 @@ public sealed partial class SidebarViewModel : ObservableObject, IDisposable
     /// </summary>
     public async Task OnThumbnailBecameVisibleAsync(int pageIndex, double dpiScale = 1.0, CancellationToken ct = default)
     {
-        var thumb = Thumbnails.FirstOrDefault(t => t.PageIndex == pageIndex);
-        if (thumb is null || thumb.RenderedPage is not null) return;
+        if (!_thumbIndex.TryGetValue(pageIndex, out var thumb) || thumb.RenderedPage is not null) return;
 
         try
         {
@@ -115,10 +123,17 @@ public sealed partial class SidebarViewModel : ObservableObject, IDisposable
         Bookmarks.Remove(vm);
     }
 
+    private int _selectedThumbIndex = -1;
+
     public void SetSelectedPage(int pageIndex)
     {
-        foreach (var thumb in Thumbnails)
-            thumb.IsSelected = thumb.PageIndex == pageIndex;
+        if (_selectedThumbIndex >= 0 && _thumbIndex.TryGetValue(_selectedThumbIndex, out var prev))
+            prev.IsSelected = false;
+
+        if (_thumbIndex.TryGetValue(pageIndex, out var next))
+            next.IsSelected = true;
+
+        _selectedThumbIndex = pageIndex;
     }
 
     [RelayCommand]
@@ -130,6 +145,8 @@ public sealed partial class SidebarViewModel : ObservableObject, IDisposable
     public void Clear()
     {
         _thumbCts.Cancel();
+        _thumbIndex.Clear();
+        _selectedThumbIndex = -1;
         Thumbnails.Clear();
         TocItems.Clear();
         Bookmarks.Clear();

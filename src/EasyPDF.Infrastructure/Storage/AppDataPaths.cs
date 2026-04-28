@@ -5,14 +5,12 @@ public static class AppDataPaths
     private static readonly string Root =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "EasyPDF");
 
-    public static string BookmarksFile => Ensure(Path.Combine(Root, "bookmarks.json"));
-    public static string AnnotationsFile => Ensure(Path.Combine(Root, "annotations.json"));
-    public static string RecentFilesFile => Ensure(Path.Combine(Root, "recent.json"));
-    public static string SettingsFile => Ensure(Path.Combine(Root, "settings.json"));
+    // Static constructor runs exactly once per AppDomain — guarantees the directory
+    // exists before any path property is accessed, without repeating the syscall.
+    static AppDataPaths() => Directory.CreateDirectory(Root);
 
-    private static string Ensure(string path)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        return path;
-    }
+    public static string BookmarksFile  => Path.Combine(Root, "bookmarks.json");
+    public static string RecentFilesFile => Path.Combine(Root, "recent.json");
+    public static string SettingsFile    => Path.Combine(Root, "settings.json");
+    public static string LogsDirectory   => Path.Combine(Root, "logs");
 }

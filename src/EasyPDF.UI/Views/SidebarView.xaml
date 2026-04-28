@@ -14,7 +14,12 @@
         <!-- Thumbnail item template — ThumbnailControl renders lazily on IsVisible=True,
              so only the thumbnails actually scrolled into view are ever rendered. -->
         <DataTemplate x:Key="ThumbnailTemplate" DataType="{x:Type vm:ThumbnailItemViewModel}">
-            <Border Margin="6,4" CornerRadius="4" Cursor="Hand" BorderThickness="2">
+            <Border Margin="6,4" CornerRadius="4" Cursor="Hand" BorderThickness="2"
+                    AutomationProperties.Name="{Binding DisplayNumber, StringFormat='Page {0}'}"
+                    AutomationProperties.HelpText="Click to navigate to this page">
+                <Border.InputBindings>
+                    <MouseBinding MouseAction="LeftClick" Command="{Binding NavigateCommand}" />
+                </Border.InputBindings>
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="BorderBrush" Value="{DynamicResource ThumbnailBorderBrush}" />
@@ -36,6 +41,8 @@
                                   DataType="{x:Type vm:TocItemViewModel}"
                                   ItemsSource="{Binding Children}">
             <TextBlock Text="{Binding Title}" Cursor="Hand"
+                       AutomationProperties.Name="{Binding Title}"
+                       AutomationProperties.HelpText="Click to navigate to this section"
                        Padding="{Binding Level, Converter={StaticResource LevelToIndent}}"
                        Foreground="{DynamicResource TextPrimaryBrush}"
                        FontSize="12" Margin="2">
@@ -149,6 +156,7 @@
                         <Button Grid.Column="1" Content="✕" Width="20" Height="20"
                                 Style="{DynamicResource IconButtonStyle}"
                                 FontSize="10"
+                                AutomationProperties.Name="{Binding Title, StringFormat='Remove bookmark {0}'}"
                                 Command="{Binding DeleteCommand}"
                                 ToolTip="Remove bookmark" />
                     </Grid>

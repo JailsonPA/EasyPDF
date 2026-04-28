@@ -27,7 +27,7 @@ public partial class App : WpfApplication
         DispatcherUnhandledException += OnDispatcherUnhandledException;
     }
 
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
@@ -62,9 +62,9 @@ public partial class App : WpfApplication
 
         // Redirect MuPDF native stderr/stdout to ILogger so warnings from
         // structurally non-standard PDFs don't appear in the terminal.
-        // Fire-and-forget — completes in milliseconds (pipe setup), always
-        // finishes before the user can open any file.
-        _ = SetupMuPdfRedirectAsync(_appLogger);
+        // Awaited before Show() so the redirect is active for every native call
+        // the app makes, including any triggered by the "Open with…" argument.
+        await SetupMuPdfRedirectAsync(_appLogger);
 
         var mainWindow = new MainWindow(_services.GetRequiredService<MainViewModel>());
         mainWindow.Show();

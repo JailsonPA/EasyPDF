@@ -33,6 +33,7 @@ public sealed class SearchViewModelTests
     public void OnQueryChanged_EmptyQuery_ClearsResults()
     {
         var vm = Make(new SearchResult(0, 0, "x", []));
+        vm.Query = "x"; // move away from the default empty value first
         vm.Results.Add(new SearchResult(0, 0, "x", []));
         vm.TotalResults = 1;
 
