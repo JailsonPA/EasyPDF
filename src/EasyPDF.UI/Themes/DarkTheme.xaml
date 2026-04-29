@@ -8,6 +8,7 @@
     <Color x:Key="BorderColor">#3F3F46</Color>
     <Color x:Key="AccentColor">#0078D4</Color>
     <Color x:Key="AccentHoverColor">#1A86D9</Color>
+    <Color x:Key="AccentForegroundColor">#FFFFFF</Color>
     <Color x:Key="TextPrimaryColor">#F1F1F1</Color>
     <Color x:Key="TextSecondaryColor">#A0A0A0</Color>
     <Color x:Key="TextDisabledColor">#555555</Color>
@@ -24,8 +25,9 @@
     <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}" />
     <SolidColorBrush x:Key="SurfaceAltBrush" Color="{StaticResource SurfaceAltColor}" />
     <SolidColorBrush x:Key="BorderBrush" Color="{StaticResource BorderColor}" />
-    <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}" />
-    <SolidColorBrush x:Key="AccentHoverBrush" Color="{StaticResource AccentHoverColor}" />
+    <SolidColorBrush x:Key="AccentBrush"           Color="{StaticResource AccentColor}" />
+    <SolidColorBrush x:Key="AccentHoverBrush"      Color="{StaticResource AccentHoverColor}" />
+    <SolidColorBrush x:Key="AccentForegroundBrush" Color="{StaticResource AccentForegroundColor}" />
     <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimaryColor}" />
     <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondaryColor}" />
     <SolidColorBrush x:Key="TextDisabledBrush" Color="{StaticResource TextDisabledColor}" />

@@ -1,4 +1,5 @@
 using EasyPDF.Application;
+using EasyPDF.Application.Interfaces;
 using EasyPDF.Application.ViewModels;
 using EasyPDF.Core.Interfaces;
 using EasyPDF.Infrastructure.Pdf;
@@ -50,6 +51,7 @@ internal static class ServiceConfiguration
         services.AddSingleton<MuPdfRenderService>();
         services.AddSingleton<IPdfRenderService>(sp => sp.GetRequiredService<MuPdfRenderService>());
         services.AddSingleton<ISearchService, MuPdfSearchService>();
+        services.AddSingleton<ITextExtractionService, MuPdfTextExtractionService>();
 
         // Storage
         services.AddSingleton<IBookmarkRepository>(_ => new JsonBookmarkRepository(AppDataPaths.BookmarksFile));
@@ -65,6 +67,16 @@ internal static class ServiceConfiguration
         // UI Services
         services.AddSingleton<IThemeService, WpfThemeService>();
         services.AddSingleton<IDialogService, WpfDialogService>();
+        services.AddSingleton<IPrintService, WpfPrintService>();
+        services.AddSingleton<IUpdateService>(_ =>
+        {
+            string owner = config.GetValue<string>("GitHub:Owner") ?? "JailsonPA";
+            string repo  = config.GetValue<string>("GitHub:Repo")  ?? "EasyPDF";
+            bool   check = config.GetValue<bool>("GitHub:CheckForUpdates", true);
+            return check
+                ? new GitHubUpdateService(owner, repo)
+                : new NoOpUpdateService();
+        });
 
         // ViewModels
         services.AddSingleton<SearchViewModel>();

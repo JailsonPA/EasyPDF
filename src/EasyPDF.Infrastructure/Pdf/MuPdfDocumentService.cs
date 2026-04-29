@@ -1,3 +1,4 @@
+using EasyPDF.Core;
 using EasyPDF.Core.Interfaces;
 using EasyPDF.Core.Models;
 using Microsoft.Extensions.Logging;
@@ -46,13 +47,13 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
         _dispatcher = dispatcher;
     }
 
-    public async Task<PdfDocument> OpenAsync(string filePath, CancellationToken ct = default)
+    public async Task<PdfDocument> OpenAsync(string filePath, string? password = null, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         if (!File.Exists(filePath))
             throw new FileNotFoundException("PDF file not found.", filePath);
 
-        await _dispatcher.RunAsync(() => OpenCore(filePath), ct);
+        await _dispatcher.RunAsync(() => OpenCore(filePath, password), ct);
         return CurrentDocument!;
     }
 
@@ -73,7 +74,7 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
         finally { _docLock.ExitReadLock(); }
     }
 
-    private void OpenCore(string filePath)
+    private void OpenCore(string filePath, string? password)
     {
         if (!_docLock.TryEnterWriteLock(WriteLockTimeout))
             throw new TimeoutException("Could not acquire write lock to open PDF — a render operation may be stuck.");
@@ -85,6 +86,16 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
             _logger.LogInformation("Opening PDF: {Path}", filePath);
             _context = new MuPDFContext();
             _muDoc   = new MuPDFDocument(_context, filePath);
+
+            // Handle password-protected PDFs.
+            // MuPDFDocument opens even for encrypted files; we must call TryUnlock
+            // before accessing pages, otherwise BuildPageList will produce corrupt data.
+            if (_muDoc.EncryptionState == EncryptionState.Encrypted)
+            {
+                bool unlocked = !string.IsNullOrEmpty(password) && _muDoc.TryUnlock(password);
+                if (!unlocked)
+                    throw new PdfPasswordRequiredException(isWrongPassword: !string.IsNullOrEmpty(password));
+            }
 
             var pages = BuildPageList();
             var toc   = BuildToc(_muDoc.Outline);
@@ -103,10 +114,8 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
         }
         catch
         {
-            // If MuPDFDocument construction, BuildPageList, or BuildToc throws
-            // (corrupted PDF, password-protected, unsupported format), _context may
-            // have been allocated but _muDoc not yet set. CloseCore disposes both,
-            // leaving the service in a clean closed state so the next open can succeed.
+            // CloseCore disposes both _context and _muDoc, leaving the service clean
+            // so the next open attempt can succeed.
             CloseCore();
             throw;
         }

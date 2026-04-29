@@ -10,7 +10,7 @@ namespace EasyPDF.Tests.ViewModels;
 public sealed class PdfViewerViewModelTests
 {
     private static PdfViewerViewModel Make() =>
-        new(Substitute.For<IPdfRenderService>(), NullLogger<PdfViewerViewModel>.Instance);
+        new(Substitute.For<IPdfRenderService>(), Substitute.For<ITextExtractionService>(), NullLogger<PdfViewerViewModel>.Instance);
 
     private static PdfDocument MakeDoc(int pageCount, double widthPt = 595, double heightPt = 842) =>
         new(FilePath: "test.pdf",

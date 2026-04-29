@@ -23,7 +23,8 @@ public partial class PdfViewerView : UserControl
         if (_vm is not null)
         {
             _vm.ScrollToPageRequested -= OnScrollToPageRequested;
-            _vm.PropertyChanged -= OnViewerPropertyChanged;
+            _vm.PropertyChanged      -= OnViewerPropertyChanged;
+            _vm.FitToWidthRequested  -= OnFitToWidthRequested;
         }
 
         _vm = e.NewValue as PdfViewerViewModel;
@@ -31,8 +32,15 @@ public partial class PdfViewerView : UserControl
         if (_vm is not null)
         {
             _vm.ScrollToPageRequested += OnScrollToPageRequested;
-            _vm.PropertyChanged += OnViewerPropertyChanged;
+            _vm.PropertyChanged       += OnViewerPropertyChanged;
+            _vm.FitToWidthRequested   += OnFitToWidthRequested;
         }
+    }
+
+    private void OnFitToWidthRequested(object? sender, EventArgs e)
+    {
+        if (_vm is not null && MainScroller.ActualWidth > 0)
+            _vm.FitToWidth(MainScroller.ActualWidth);
     }
 
     // Applies FitToWidth immediately when the command activates it, without

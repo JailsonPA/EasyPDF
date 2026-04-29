@@ -38,9 +38,12 @@ public sealed class WpfThemeService : IThemeService
         CurrentTheme = theme;
 
         var resolved = theme == AppTheme.System ? ResolveSystemTheme() : theme;
-        var uri = resolved == AppTheme.Dark
-            ? new Uri("/EasyPDF;component/Themes/DarkTheme.xaml", UriKind.Relative)
-            : new Uri("/EasyPDF;component/Themes/LightTheme.xaml", UriKind.Relative);
+        var uri = resolved switch
+        {
+            AppTheme.Dark         => new Uri("/EasyPDF;component/Themes/DarkTheme.xaml",         UriKind.Relative),
+            AppTheme.HighContrast => new Uri("/EasyPDF;component/Themes/HighContrastTheme.xaml", UriKind.Relative),
+            _                     => new Uri("/EasyPDF;component/Themes/LightTheme.xaml",        UriKind.Relative),
+        };
 
         var dicts = System.Windows.Application.Current.Resources.MergedDictionaries;
 
@@ -68,6 +71,10 @@ public sealed class WpfThemeService : IThemeService
     {
         try
         {
+            // WPF's SystemParameters.HighContrast reflects the Windows HC accessibility setting.
+            if (System.Windows.SystemParameters.HighContrast)
+                return AppTheme.HighContrast;
+
             using var key = Microsoft.Win32.Registry.CurrentUser
                 .OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize");
             int? value = key?.GetValue("AppsUseLightTheme") as int?;

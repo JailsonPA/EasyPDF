@@ -34,6 +34,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="32" />   <!-- Custom title bar -->
             <RowDefinition Height="44" />   <!-- Toolbar -->
+            <RowDefinition Height="Auto" /> <!-- Update banner (hidden when no update) -->
             <RowDefinition Height="Auto" /> <!-- Search panel (collapsible) -->
             <RowDefinition Height="*" />    <!-- Main content -->
             <RowDefinition Height="24" />   <!-- Status bar -->
@@ -179,6 +180,16 @@
                     <Button Content="⊟" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
                             AutomationProperties.Name="Fit to width"
                             Command="{Binding Viewer.FitToWidthModeCommand}" ToolTip="Fit to width" />
+                    <Separator Style="{DynamicResource {x:Static ToolBar.SeparatorStyleKey}}"
+                               Width="1" Height="20" Margin="4,0" />
+                    <Button Content="&#xE7AD;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
+                            AutomationProperties.Name="Rotate left"
+                            Command="{Binding Viewer.RotateCurrentPageCounterClockwiseCommand}"
+                            ToolTip="Rotate page left (Ctrl+[)" />
+                    <Button Content="&#xE7AE;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
+                            AutomationProperties.Name="Rotate right"
+                            Command="{Binding Viewer.RotateCurrentPageClockwiseCommand}"
+                            ToolTip="Rotate page right (Ctrl+])" />
                 </StackPanel>
 
                 <StackPanel Grid.Column="3" Orientation="Horizontal"
@@ -187,19 +198,57 @@
                             AutomationProperties.Name="Add bookmark"
                             Command="{Binding AddBookmarkCommand}" ToolTip="Add bookmark (Ctrl+B)"
                             Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}" />
+                    <Button Content="&#xE749;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
+                            AutomationProperties.Name="Print"
+                            Command="{Binding PrintCommand}" ToolTip="Print (Ctrl+P)"
+                            Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}" />
                     <Button Content="&#xE721;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
                             AutomationProperties.Name="Toggle search panel"
                             Command="{Binding ToggleSearchCommand}" ToolTip="Search (Ctrl+F)"
                             Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}" />
                     <Button Content="&#xE793;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
-                            AutomationProperties.Name="Toggle theme"
-                            Command="{Binding ToggleThemeCommand}" ToolTip="Toggle dark/light theme" />
+                            AutomationProperties.Name="Cycle theme"
+                            Command="{Binding ToggleThemeCommand}" ToolTip="Cycle theme: Dark / Light / High Contrast" />
                 </StackPanel>
             </Grid>
         </Border>
 
-        <!-- ===== Search Panel (collapsible) ===== -->
+        <!-- ===== Update Banner ===== -->
+        <!-- Shown only when a newer GitHub release is detected. -->
         <Border Grid.Row="2"
+                Background="#E67E22"
+                Padding="12,6"
+                Visibility="{Binding UpdateAvailable, Converter={StaticResource BoolToVis}}">
+            <Grid>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="&#xE946;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                               Foreground="White" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <TextBlock FontSize="12" Foreground="White" VerticalAlignment="Center">
+                        <Run Text="EasyPDF" />
+                        <Run Text="{Binding PendingUpdate.Version, Mode=OneWay}" />
+                        <Run Text="is available." />
+                    </TextBlock>
+                    <Button Content="Download" Margin="12,0,0,0"
+                            Padding="10,3"
+                            FontSize="12"
+                            Background="White" Foreground="#E67E22"
+                            BorderThickness="0"
+                            Cursor="Hand"
+                            Command="{Binding OpenReleasePageCommand}"
+                            ToolTip="Open release page in browser" />
+                </StackPanel>
+                <Button HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Width="24" Height="24"
+                        Content="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="11"
+                        Background="Transparent" BorderThickness="0"
+                        Foreground="White" Cursor="Hand"
+                        Command="{Binding DismissUpdateCommand}"
+                        ToolTip="Dismiss" />
+            </Grid>
+        </Border>
+
+        <!-- ===== Search Panel (collapsible) ===== -->
+        <Border Grid.Row="3"
                 Background="{DynamicResource SurfaceBrush}"
                 BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="0,0,0,1"
@@ -220,7 +269,8 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <TextBox Grid.Column="0"
+                    <TextBox x:Name="SearchBox"
+                             Grid.Column="0"
                              AutomationProperties.Name="Search query"
                              Text="{Binding Query, UpdateSourceTrigger=PropertyChanged}"
                              FontSize="13"
@@ -264,7 +314,7 @@
         </Border>
 
         <!-- ===== Main Content ===== -->
-        <Grid Grid.Row="3">
+        <Grid Grid.Row="4">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />  <!-- Sidebar -->
                 <ColumnDefinition Width="*" />     <!-- Viewer -->
@@ -339,7 +389,7 @@
         </Grid>
 
         <!-- ===== Status Bar ===== -->
-        <Border Grid.Row="4"
+        <Border Grid.Row="5"
                 Background="{DynamicResource ToolbarBrush}"
                 BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="0,1,0,0">

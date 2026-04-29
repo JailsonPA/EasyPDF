@@ -4,5 +4,6 @@ public enum AppTheme
 {
     Light,
     Dark,
-    System
+    System,
+    HighContrast
 }

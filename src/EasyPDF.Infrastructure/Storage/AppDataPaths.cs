@@ -12,5 +12,6 @@ public static class AppDataPaths
     public static string BookmarksFile  => Path.Combine(Root, "bookmarks.json");
     public static string RecentFilesFile => Path.Combine(Root, "recent.json");
     public static string SettingsFile    => Path.Combine(Root, "settings.json");
+    public static string WindowFile      => Path.Combine(Root, "window.json");
     public static string LogsDirectory   => Path.Combine(Root, "logs");
 }

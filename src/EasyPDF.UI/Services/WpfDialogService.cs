@@ -32,10 +32,15 @@ public sealed class WpfDialogService : IDialogService
 
     public Task<string?> PromptAsync(string title, string hint, string defaultValue = "")
     {
-        // A simple prompt using a dedicated small window would be ideal;
-        // for now, InputBox via interaction is sufficient.
         var window = new PromptWindow(title, hint, defaultValue);
         bool? result = window.ShowDialog();
         return Task.FromResult(result == true ? window.Value : null);
+    }
+
+    public Task<string?> PromptPasswordAsync(string fileName, string? errorMessage = null)
+    {
+        var window = new PasswordWindow(fileName, errorMessage);
+        bool? result = window.ShowDialog();
+        return Task.FromResult(result == true ? window.Password : null);
     }
 }

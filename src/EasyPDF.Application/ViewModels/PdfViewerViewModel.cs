@@ -4,6 +4,7 @@ using EasyPDF.Core.Interfaces;
 using EasyPDF.Core.Models;
 using Microsoft.Extensions.Logging;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 
 namespace EasyPDF.Application.ViewModels;
 
@@ -20,9 +21,18 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
     private const double DefaultScale = 1.5; // ~108 DPI — comfortable default
 
     private readonly IPdfRenderService _renderService;
+    private readonly ITextExtractionService _textService;
     private readonly ILogger<PdfViewerViewModel> _logger;
     private readonly Dictionary<int, CancellationTokenSource> _pendingRenders = new();
     private bool _applyingFitToWidth;
+
+    // Search highlight state — stored so highlights can be recomputed after zoom changes.
+    private IReadOnlyList<SearchResult> _searchResults = [];
+    private int _activeResultIndex = -1;
+
+    // Text selection state
+    private string? _selectedText;
+    public string? SelectedText => _selectedText;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CurrentPageDisplay))]
@@ -57,10 +67,19 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
 
     public event EventHandler<int>? ScrollToPageRequested;
 
-    public PdfViewerViewModel(IPdfRenderService renderService, ILogger<PdfViewerViewModel> logger)
+    // Fired after a document loads when IsFitToWidth is true, so the View can
+    // call FitToWidth() immediately — IsFitToWidth doesn't change, so no
+    // PropertyChanged fires and SizeChanged doesn't fire on a content-only reload.
+    public event EventHandler? FitToWidthRequested;
+
+    public PdfViewerViewModel(
+        IPdfRenderService renderService,
+        ITextExtractionService textService,
+        ILogger<PdfViewerViewModel> logger)
     {
         _renderService = renderService;
-        _logger = logger;
+        _textService   = textService;
+        _logger        = logger;
     }
 
     public void LoadDocument(PdfDocument document)
@@ -77,14 +96,20 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
         CurrentPageIndex = 0;
         IsLoading = false;
         ErrorMessage = null;
+
+        if (IsFitToWidth)
+            FitToWidthRequested?.Invoke(this, EventArgs.Empty);
     }
 
     public void Clear()
     {
         CancelAllPendingRenders();
+        ClearSelection();
         Pages.Clear();
         PageCount = 0;
         CurrentPageIndex = 0;
+        _searchResults = [];
+        _activeResultIndex = -1;
     }
 
     /// <summary>
@@ -163,6 +188,7 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
 
     /// <summary>
     /// Invalidates rendered bitmaps when zoom changes so pages re-render at the new resolution.
+    /// Also recomputes highlight positions to match the new scale.
     /// </summary>
     partial void OnScaleChanged(double value)
     {
@@ -174,7 +200,100 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
             p.Scale = value;
             p.RenderedPage = null;
         }
+        if (_searchResults.Count > 0)
+            ApplySearchHighlights();
     }
+
+    // ── Search highlight public API ───────────────────────────────────────────
+
+    /// <summary>
+    /// Pushes converted highlight rectangles onto each affected PageViewModel.
+    /// Call this after search completes and after each result navigation.
+    /// </summary>
+    public void UpdateSearchHighlights(IReadOnlyList<SearchResult> results, int activeIndex)
+    {
+        _searchResults = results;
+        _activeResultIndex = activeIndex;
+        ApplySearchHighlights();
+    }
+
+    public void ClearSearchHighlights()
+    {
+        _searchResults = [];
+        _activeResultIndex = -1;
+        foreach (var p in Pages)
+            p.SearchHighlights = [];
+    }
+
+    private void ApplySearchHighlights()
+    {
+        // Clear all pages first so pages with no matches lose stale highlights.
+        foreach (var p in Pages)
+            p.SearchHighlights = [];
+
+        foreach (var group in _searchResults
+            .Select((r, i) => (result: r, globalIndex: i))
+            .GroupBy(x => x.result.PageIndex))
+        {
+            if (group.Key < 0 || group.Key >= Pages.Count) continue;
+            var pageVm = Pages[group.Key];
+
+            pageVm.SearchHighlights = group
+                .SelectMany(x => x.result.Quads.Select(
+                    q => ConvertQuad(q, pageVm.Scale, x.globalIndex == _activeResultIndex)))
+                .ToList();
+        }
+    }
+
+    // ── Text selection public API ─────────────────────────────────────────────
+
+    public void ClearSelection()
+    {
+        _selectedText = null;
+        foreach (var p in Pages) p.SelectionHighlights = [];
+    }
+
+    /// <summary>
+    /// Extracts the text and highlight quads for the drag region on <paramref name="pageVm"/>
+    /// and stores the result for <see cref="SelectedText"/> / Ctrl+C.
+    /// </summary>
+    public async Task ExtractSelectionAsync(
+        PageViewModel pageVm,
+        float startX, float startY,
+        float endX,   float endY,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var result = await _textService.ExtractSelectionAsync(
+                pageVm.PageIndex,
+                new PdfPoint(startX, startY),
+                new PdfPoint(endX, endY),
+                ct);
+
+            if (result is null || result.Quads.Count == 0)
+            {
+                pageVm.SelectionHighlights = [];
+                return;
+            }
+
+            pageVm.SelectionHighlights = result.Quads
+                .Select(q => new HighlightRect(
+                    q.X * pageVm.Scale, q.Y * pageVm.Scale,
+                    q.Width * pageVm.Scale, q.Height * pageVm.Scale,
+                    false))
+                .ToList();
+
+            _selectedText = result.Text;
+        }
+        catch (OperationCanceledException) { }
+        catch { pageVm.SelectionHighlights = []; }
+    }
+
+    // MuPDF search quads use top-left origin, Y increases downward — same as WPF.
+    // Multiplying by Scale converts PDF points → WPF logical pixels.
+    private static HighlightRect ConvertQuad(PdfRect q, double scale, bool isActive) =>
+        new(q.X * scale, q.Y * scale, q.Width * scale, q.Height * scale, isActive);
 
     [RelayCommand(CanExecute = nameof(CanGoBack))]
     private void PreviousPage()
@@ -221,6 +340,20 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
         Scale = Math.Clamp(percent / 100.0, MinScale, MaxScale);
 
     [RelayCommand]
+    private void RotateCurrentPageClockwise()
+    {
+        if (CurrentPageIndex >= 0 && CurrentPageIndex < Pages.Count)
+            Pages[CurrentPageIndex].Rotation = (Pages[CurrentPageIndex].Rotation + 90) % 360;
+    }
+
+    [RelayCommand]
+    private void RotateCurrentPageCounterClockwise()
+    {
+        if (CurrentPageIndex >= 0 && CurrentPageIndex < Pages.Count)
+            Pages[CurrentPageIndex].Rotation = (Pages[CurrentPageIndex].Rotation + 270) % 360;
+    }
+
+    [RelayCommand]
     private void FirstPage() => GoToPage(0);
 
     [RelayCommand]
@@ -262,15 +395,31 @@ public sealed partial class PageViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(DisplayHeight))]
     [NotifyPropertyChangedFor(nameof(ControlWidth))]
     [NotifyPropertyChangedFor(nameof(ControlHeight))]
+    [NotifyPropertyChangedFor(nameof(BitmapWidth))]
+    [NotifyPropertyChangedFor(nameof(BitmapHeight))]
     private double _scale = 1.5;
 
-    public double DisplayWidth  => WidthPt  * Scale;
-    public double DisplayHeight => HeightPt * Scale;
+    // Rotation in degrees — 0, 90, 180, or 270.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayWidth))]
+    [NotifyPropertyChangedFor(nameof(DisplayHeight))]
+    [NotifyPropertyChangedFor(nameof(ControlWidth))]
+    [NotifyPropertyChangedFor(nameof(ControlHeight))]
+    private int _rotation;
 
-    // ControlWidth/Height = page content + 8 px shadow margin on each side (matches
-    // PdfPageControl.xaml Border Margin="8"). The PdfPageControl is sized to these
-    // values so the Border's inner content area equals DisplayWidth × DisplayHeight
-    // exactly — Image Stretch="None" then renders the bitmap at 1:1, no WPF scaling.
+    private bool IsTransverse => Rotation == 90 || Rotation == 270;
+
+    // Natural bitmap dimensions — always portrait/landscape as the PDF page.
+    // The content Grid in PdfPageControl uses these for sizing (it is then
+    // visually rotated via LayoutTransform, making WPF see it as DisplayWidth×DisplayHeight).
+    public double BitmapWidth  => WidthPt  * Scale;
+    public double BitmapHeight => HeightPt * Scale;
+
+    // Post-rotation display dimensions: width/height swap at 90°/270°.
+    public double DisplayWidth  => IsTransverse ? HeightPt * Scale : WidthPt  * Scale;
+    public double DisplayHeight => IsTransverse ? WidthPt  * Scale : HeightPt * Scale;
+
+    // ControlWidth/Height = rotated page content + 8 px shadow margin on each side.
     public double ControlWidth  => DisplayWidth  + 16;
     public double ControlHeight => DisplayHeight + 16;
 
@@ -282,6 +431,12 @@ public sealed partial class PageViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _hasError;
+
+    [ObservableProperty]
+    private IReadOnlyList<HighlightRect> _searchHighlights = [];
+
+    [ObservableProperty]
+    private IReadOnlyList<HighlightRect> _selectionHighlights = [];
 
     public PageViewModel(int pageIndex, double widthPt, double heightPt)
     {

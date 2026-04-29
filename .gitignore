@@ -56,3 +56,7 @@ drop/
 
 ## App-specific
 appsettings.Development.json
+
+## MSIX packaging — generated artefacts, never commit private keys
+packaging/*.pfx
+packaging/*.p12
