@@ -86,7 +86,7 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
     {
         var vms = document.Pages.Select(p =>
         {
-            var vm = new PageViewModel(p.Index, p.WidthPt, p.HeightPt);
+            var vm = new PageViewModel(p.Index, p.WidthPt, p.HeightPt, p.Links);
             vm.Scale = Scale;
             return vm;
         });
@@ -389,6 +389,7 @@ public sealed partial class PageViewModel : ObservableObject
     public int DisplayNumber => PageIndex + 1;
     public double WidthPt { get; }
     public double HeightPt { get; }
+    public IReadOnlyList<PdfLink> Links { get; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DisplayWidth))]
@@ -438,10 +439,12 @@ public sealed partial class PageViewModel : ObservableObject
     [ObservableProperty]
     private IReadOnlyList<HighlightRect> _selectionHighlights = [];
 
-    public PageViewModel(int pageIndex, double widthPt, double heightPt)
+    public PageViewModel(int pageIndex, double widthPt, double heightPt,
+                         IReadOnlyList<PdfLink>? links = null)
     {
         PageIndex = pageIndex;
-        WidthPt = widthPt;
-        HeightPt = heightPt;
+        WidthPt   = widthPt;
+        HeightPt  = heightPt;
+        Links     = links ?? [];
     }
 }

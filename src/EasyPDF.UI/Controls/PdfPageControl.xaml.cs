@@ -1,5 +1,7 @@
 using EasyPDF.Application.ViewModels;
+using EasyPDF.Core.Models;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -135,6 +137,36 @@ public partial class PdfPageControl : UserControl
         _extractCts?.Dispose();
     }
 
+    // ─── Link support ──────────────────────────────────────────────────────────
+
+    private static PdfLink? HitTestLink(PageViewModel page, System.Windows.Point imagePos)
+    {
+        double pdfX = imagePos.X / page.Scale;
+        double pdfY = imagePos.Y / page.Scale;
+        foreach (var link in page.Links)
+        {
+            var a = link.Area;
+            if (pdfX >= a.X && pdfX <= a.X + a.Width &&
+                pdfY >= a.Y && pdfY <= a.Y + a.Height)
+                return link;
+        }
+        return null;
+    }
+
+    private void ActivateLink(PdfLink link)
+    {
+        switch (link.Destination)
+        {
+            case PdfLinkDestination.Internal dest:
+                ViewerVm?.GoToPageCommand.Execute(dest.PageIndex);
+                break;
+            case PdfLinkDestination.External dest when !string.IsNullOrEmpty(dest.Uri):
+                try { Process.Start(new ProcessStartInfo(dest.Uri) { UseShellExecute = true }); }
+                catch { }
+                break;
+        }
+    }
+
     // ─── Text selection ────────────────────────────────────────────────────────
 
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
@@ -144,6 +176,15 @@ public partial class PdfPageControl : UserControl
 
         var pos = e.GetPosition(PageImage);
         if (pos.X < 0 || pos.Y < 0 || pos.X > page.DisplayWidth || pos.Y > page.DisplayHeight) return;
+
+        // Link click takes priority over text selection.
+        var link = HitTestLink(page, pos);
+        if (link is not null)
+        {
+            ActivateLink(link.Value);
+            e.Handled = true;
+            return;
+        }
 
         ViewerVm.ClearSelection();
         _selectionStartPdf = new System.Windows.Point(pos.X / page.Scale, pos.Y / page.Scale);
@@ -155,9 +196,16 @@ public partial class PdfPageControl : UserControl
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
-        if (!_isSelecting || DataContext is not PageViewModel page) return;
+        if (DataContext is not PageViewModel page) return;
 
-        var pos  = e.GetPosition(PageImage);
+        var pos = e.GetPosition(PageImage);
+
+        if (!_isSelecting)
+        {
+            Cursor = HitTestLink(page, pos) is not null ? Cursors.Hand : Cursors.IBeam;
+            return;
+        }
+
         double ex = Math.Clamp(pos.X / page.Scale, 0, page.WidthPt);
         double ey = Math.Clamp(pos.Y / page.Scale, 0, page.HeightPt);
 

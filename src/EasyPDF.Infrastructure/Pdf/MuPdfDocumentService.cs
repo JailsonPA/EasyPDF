@@ -146,10 +146,44 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
         var list = new List<PdfPageInfo>(_muDoc!.Pages.Count);
         for (int i = 0; i < _muDoc.Pages.Count; i++)
         {
-            var bounds = _muDoc.Pages[i].Bounds;
-            list.Add(new PdfPageInfo(i, bounds.X1 - bounds.X0, bounds.Y1 - bounds.Y0));
+            var page   = _muDoc.Pages[i];
+            var bounds = page.Bounds;
+            var links  = ExtractLinks(page, bounds.X0, bounds.Y0);
+            list.Add(new PdfPageInfo(i, bounds.X1 - bounds.X0, bounds.Y1 - bounds.Y0) { Links = links });
         }
         return list;
+    }
+
+    private static IReadOnlyList<PdfLink> ExtractLinks(MuPDFPage page, float originX, float originY)
+    {
+        try
+        {
+            using var muLinks = page.Links;
+            if (muLinks.Count == 0) return [];
+
+            var result = new List<PdfLink>(muLinks.Count);
+            for (int j = 0; j < muLinks.Count; j++)
+            {
+                var link = muLinks[j];
+                var a    = link.ActiveArea;
+                var area = new PdfRect(a.X0 - originX, a.Y0 - originY,
+                                       a.X1 - a.X0,    a.Y1 - a.Y0);
+                if (area.Width <= 0 || area.Height <= 0) continue;
+
+                // PageNumber is the overall (chapter-independent) 0-based page index.
+                PdfLinkDestination? dest = link.Destination switch
+                {
+                    MuPDFInternalLinkDestination d => new PdfLinkDestination.Internal(d.PageNumber),
+                    MuPDFExternalLinkDestination d when !string.IsNullOrEmpty(d.Uri)
+                                                   => new PdfLinkDestination.External(d.Uri),
+                    _                              => null,
+                };
+                if (dest is not null)
+                    result.Add(new PdfLink(area, dest));
+            }
+            return result;
+        }
+        catch { return []; }
     }
 
     private static IReadOnlyList<TocEntry> BuildToc(MuPDFOutline outline)

@@ -7,4 +7,5 @@ public sealed record PdfPageInfo(
 )
 {
     public double AspectRatio => HeightPt / WidthPt;
+    public IReadOnlyList<PdfLink> Links { get; init; } = [];
 }

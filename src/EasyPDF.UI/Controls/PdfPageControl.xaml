@@ -35,7 +35,6 @@
             <Image x:Name="PageImage"
                    Stretch="None"
                    UseLayoutRounding="True"
-                   Cursor="IBeam"
                    RenderOptions.BitmapScalingMode="Fant"
                    Source="{Binding RenderedPage, Converter={StaticResource PageConverter}}"
                    Visibility="{Binding RenderedPage, Converter={StaticResource NullToVis}}" />
