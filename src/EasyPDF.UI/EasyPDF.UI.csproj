@@ -11,6 +11,13 @@
     <AssemblyName>EasyPDF</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <Version>1.5.0</Version>
+    <AssemblyVersion>1.5.0.0</AssemblyVersion>
+    <FileVersion>1.5.0.0</FileVersion>
+    <Product>EasyPDF</Product>
+    <Company>Jailson Prazeres</Company>
+    <Copyright>© 2026 Jailson Prazeres</Copyright>
+    <Description>Fast, lightweight PDF viewer for Windows — powered by MuPDF and .NET 10</Description>
   </PropertyGroup>
 
   <ItemGroup>

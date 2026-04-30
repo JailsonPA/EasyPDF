@@ -307,6 +307,9 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    private void AboutClick(object sender, RoutedEventArgs e) =>
+        new AboutWindow { Owner = this }.ShowDialog();
+
     private void SearchBoxKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter)

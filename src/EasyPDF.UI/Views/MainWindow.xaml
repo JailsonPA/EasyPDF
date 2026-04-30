@@ -210,6 +210,11 @@
                     <Button Content="&#xE793;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
                             AutomationProperties.Name="Cycle theme"
                             Command="{Binding ToggleThemeCommand}" ToolTip="Cycle theme: Dark / Light / High Contrast" />
+                    <Separator Style="{DynamicResource {x:Static ToolBar.SeparatorStyleKey}}"
+                               Width="1" Height="20" Margin="4,0" />
+                    <Button Content="&#xE946;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
+                            AutomationProperties.Name="About"
+                            ToolTip="About EasyPDF" Click="AboutClick" />
                 </StackPanel>
             </Grid>
         </Border>
