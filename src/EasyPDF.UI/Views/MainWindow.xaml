@@ -8,6 +8,7 @@
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
         xmlns:core="clr-namespace:EasyPDF.Core.Models;assembly=EasyPDF.Core"
         Title="{Binding Title}"
+        Icon="pack://application:,,,/Assets/app.ico"
         MinWidth="900" MinHeight="600"
         Width="1280" Height="800"
         WindowStyle="None"
