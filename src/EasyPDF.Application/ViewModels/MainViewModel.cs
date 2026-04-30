@@ -156,9 +156,24 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
     private async Task OpenRecentAsync(RecentFile recent) =>
         await LoadDocumentAsync(recent.FilePath);
 
+    /// <summary>
+    /// Persists the current page index so the next open restores the reading position.
+    /// Safe to call fire-and-forget on app shutdown.
+    /// </summary>
+    public async Task SaveLastPageAsync()
+    {
+        if (CurrentDocument is null) return;
+        var existing = RecentFiles
+            .FirstOrDefault(r => r.FilePath.Equals(CurrentDocument.FilePath, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
+            await _recentRepo.AddOrUpdateAsync(existing with { LastPageIndex = Viewer.CurrentPageIndex });
+    }
+
     [RelayCommand]
     private async Task CloseDocumentAsync()
     {
+        await SaveLastPageAsync();
+
         try
         {
             _docService.Close();
@@ -236,6 +251,11 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
             return;
         }
 
+        // Read stored last-page before the upsert below overwrites it.
+        int lastPageIndex = RecentFiles
+            .FirstOrDefault(r => r.FilePath.Equals(filePath, StringComparison.OrdinalIgnoreCase))
+            ?.LastPageIndex ?? 0;
+
         var fileSize = new FileInfo(filePath).Length;
         if (fileSize > _settings.LargeFileSizeBytes)
         {
@@ -260,9 +280,14 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
             await Sidebar.LoadDocumentAsync(doc);
             Search.TotalPages = doc.PageCount;
 
+            // Restore the last viewed page (scroll syncs sidebar selection too).
+            if (lastPageIndex > 0 && lastPageIndex < doc.PageCount)
+                Viewer.GoToPageCommand.Execute(lastPageIndex);
+
+            // Preserve lastPageIndex so it isn't reset to 0 on every open.
             await _recentRepo.AddOrUpdateAsync(new RecentFile(
                 doc.FilePath, doc.FileName, doc.PageCount,
-                doc.FileSizeBytes, DateTime.UtcNow));
+                doc.FileSizeBytes, DateTime.UtcNow, lastPageIndex));
 
             await RefreshRecentFilesAsync();
             SetStatus($"Opened {doc.FileName}  ·  {doc.PageCount} pages");

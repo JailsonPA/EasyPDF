@@ -330,53 +330,77 @@
 
             <!-- PDF Viewer or Welcome screen -->
             <Grid Grid.Column="1">
-                <!-- Welcome / empty state -->
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
-                            Visibility="{Binding HasDocument, Converter={StaticResource InvBoolToVis}}">
-                    <TextBlock Text="📄" FontSize="64" HorizontalAlignment="Center"
-                               Foreground="{DynamicResource TextSecondaryBrush}" />
-                    <TextBlock Text="EasyPDF" FontSize="28" FontWeight="Light"
-                               Foreground="{DynamicResource TextPrimaryBrush}"
-                               HorizontalAlignment="Center" Margin="0,8,0,0" />
-                    <TextBlock Text="Open a PDF to get started"
-                               Foreground="{DynamicResource TextSecondaryBrush}"
-                               HorizontalAlignment="Center" Margin="0,4,0,24" />
-                    <Button Content="Open PDF…"
-                            Style="{DynamicResource AccentButtonStyle}"
-                            Command="{Binding OpenFileCommand}"
-                            HorizontalAlignment="Center" Padding="24,8" />
+                <!-- Welcome / empty state — two-row Grid avoids ScrollViewer centering quirks -->
+                <Grid Background="{DynamicResource BackgroundBrush}"
+                      Visibility="{Binding HasDocument, Converter={StaticResource InvBoolToVis}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />  <!-- hero section -->
+                        <RowDefinition Height="*" />     <!-- recent files, scrollable -->
+                    </Grid.RowDefinitions>
 
-                    <!-- Recent files -->
-                    <TextBlock Text="Recent files" FontSize="13" FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextSecondaryBrush}"
-                               HorizontalAlignment="Center" Margin="0,32,0,8" />
-                    <ItemsControl ItemsSource="{Binding RecentFiles}"
-                                  HorizontalAlignment="Center" MaxWidth="420">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type core:RecentFile}">
-                                <Button Style="{DynamicResource ToolbarButtonStyle}"
-                                        HorizontalAlignment="Stretch"
-                                        Command="{Binding DataContext.OpenRecentCommand,
-                                                          RelativeSource={RelativeSource AncestorType=Window}}"
-                                        CommandParameter="{Binding}">
-                                    <StackPanel HorizontalAlignment="Left" Margin="4,2">
-                                        <TextBlock Text="{Binding FileName}" FontSize="13"
-                                                   Foreground="{DynamicResource TextPrimaryBrush}" />
-                                        <TextBlock Text="{Binding FilePath}"
-                                                   FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"
-                                                   TextTrimming="CharacterEllipsis" MaxWidth="380" />
-                                    </StackPanel>
-                                </Button>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
+                    <!-- Hero -->
+                    <StackPanel Grid.Row="0" HorizontalAlignment="Center" Margin="0,48,0,24">
+                        <TextBlock Text="📄" FontSize="56" HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                        <TextBlock Text="EasyPDF" FontSize="28" FontWeight="Light"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   HorizontalAlignment="Center" Margin="0,8,0,4" />
+                        <TextBlock Text="Open a PDF to get started"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   HorizontalAlignment="Center" Margin="0,0,0,20" />
+                        <Button Content="Open PDF…"
+                                Style="{DynamicResource AccentButtonStyle}"
+                                Command="{Binding OpenFileCommand}"
+                                HorizontalAlignment="Center" Padding="24,8" />
+                    </StackPanel>
 
-                <!-- Main viewer -->
-                <views:PdfViewerView DataContext="{Binding Viewer}"
-                                     Visibility="{Binding HasDocument,
-                                                          RelativeSource={RelativeSource AncestorType=Window},
-                                                          Converter={StaticResource BoolToVis}}" />
+                    <!-- Recent files — scrollable list fills remaining height -->
+                    <Grid Grid.Row="1">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0"
+                                   Text="Recent files" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   HorizontalAlignment="Center" Margin="0,0,0,4" />
+
+                        <ScrollViewer Grid.Row="1"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl ItemsSource="{Binding RecentFiles}"
+                                          HorizontalAlignment="Center" Width="420"
+                                          Margin="0,0,0,24">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type core:RecentFile}">
+                                        <Button Style="{DynamicResource ToolbarButtonStyle}"
+                                                HorizontalAlignment="Stretch"
+                                                Command="{Binding DataContext.OpenRecentCommand,
+                                                                  RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}">
+                                            <StackPanel HorizontalAlignment="Left" Margin="4,2">
+                                                <TextBlock Text="{Binding FileName}" FontSize="13"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                                <TextBlock Text="{Binding FilePath}"
+                                                           FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"
+                                                           TextTrimming="CharacterEllipsis" MaxWidth="380" />
+                                            </StackPanel>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                </Grid>
+
+                <!-- Main viewer — Border owns Visibility (DataContext=MainViewModel, no RelativeSource needed).
+                     RelativeSource on PdfViewerView itself was unreliable: when DataContext=Viewer was
+                     resolved, the RelativeSource binding could fail and leave PdfViewerView Visible,
+                     painting its PageBackgroundBrush over the welcome screen. -->
+                <Border Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}">
+                    <views:PdfViewerView DataContext="{Binding Viewer}" />
+                </Border>
 
                 <!-- Loading overlay -->
                 <Border Background="#AA000000"

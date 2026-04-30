@@ -81,7 +81,10 @@ public sealed partial class SidebarViewModel : ObservableObject, IDisposable
         try
         {
             thumb.IsLoading = true;
-            thumb.RenderedPage = await _renderService.RenderThumbnailAsync(pageIndex, 160, dpiScale, ct);
+            // 128 px matches the effective display width of a portrait A4 page inside
+            // the 140×180 container (Stretch=Uniform clamps height at ~180 → width ≈ 127 px).
+            // Rendering at 160 was wasteful and caused an unnecessary Stretch downscale.
+            thumb.RenderedPage = await _renderService.RenderThumbnailAsync(pageIndex, 128, dpiScale, ct);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)

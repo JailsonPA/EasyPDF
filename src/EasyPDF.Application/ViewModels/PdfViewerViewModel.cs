@@ -121,7 +121,7 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
     {
         if (pageIndex < 0 || pageIndex >= Pages.Count) return;
         var pageVm = Pages[pageIndex];
-        if (pageVm.RenderedPage is not null) return; // already rendered at this scale
+        if (pageVm.RenderedPage is not null && !pageVm.IsStale) return; // already rendered at current scale
 
         // Cancel and remove any previous render for this slot.
         // Remove explicitly so the old call's finally block cannot orphan our new CTS.
@@ -139,14 +139,18 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
 
         try
         {
-            pageVm.IsRendering = true;
+            if (!pageVm.IsStale)
+                pageVm.IsRendering = true;  // suppress spinner when old bitmap is still visible
             var rendered = await _renderService.RenderPageAsync(pageIndex, Scale, dpiScale, cts.Token);
+            pageVm.IsStale = false;
             pageVm.RenderedPage = rendered;
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Render failed for page {Page}", pageIndex);
+            pageVm.IsStale = false;
+            pageVm.RenderedPage = null;
             pageVm.HasError = true;
         }
         finally
@@ -198,7 +202,8 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
         foreach (var p in Pages)
         {
             p.Scale = value;
-            p.RenderedPage = null;
+            if (p.RenderedPage is not null)
+                p.IsStale = true;  // keep old bitmap visible; fresh render will clear this
         }
         if (_searchResults.Count > 0)
             ApplySearchHighlights();
@@ -426,6 +431,12 @@ public sealed partial class PageViewModel : ObservableObject
 
     [ObservableProperty]
     private RenderedPage? _renderedPage;
+
+    // True while the existing RenderedPage is from a superseded scale and a fresh
+    // render is queued. The View stretches the stale bitmap to fill the new container
+    // so the user always sees content — no blank flash — while re-rendering.
+    [ObservableProperty]
+    private bool _isStale;
 
     [ObservableProperty]
     private bool _isRendering;

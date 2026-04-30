@@ -65,24 +65,23 @@ public partial class PdfPageControl : UserControl
         if (_boundPage is not null)
         {
             _boundPage.PropertyChanged += OnPagePropertyChanged;
-            // Recycled containers may miss the RenderedPage=null PropertyChanged that fires
+            // Recycled containers may miss the IsStale/RenderedPage=null PropertyChanged that fires
             // during a scale change — if the DataContext swap races with OnScaleChanged.
             // Trigger here so the page always renders when a control is assigned to it.
-            if (_boundPage.RenderedPage is null && IsVisible)
+            if ((_boundPage.RenderedPage is null || _boundPage.IsStale) && IsVisible)
                 TriggerRender();
         }
     }
 
     private void OnPagePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        // When zoom changes, PdfViewerViewModel sets RenderedPage = null.
-        // Re-render immediately if this control is still visible.
-        if (e.PropertyName == nameof(PageViewModel.RenderedPage)
-            && _boundPage?.RenderedPage is null
-            && IsVisible)
-        {
+        if (!IsVisible || _boundPage is null) return;
+
+        // Re-render when the bitmap is cleared (RenderedPage=null) or marked stale (IsStale=true).
+        if (e.PropertyName == nameof(PageViewModel.RenderedPage) && _boundPage.RenderedPage is null)
             TriggerRender();
-        }
+        else if (e.PropertyName == nameof(PageViewModel.IsStale) && _boundPage.IsStale)
+            TriggerRender();
     }
 
     private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -101,25 +100,20 @@ public partial class PdfPageControl : UserControl
 
         var dpi = VisualTreeHelper.GetDpi(this);
 
-        // Always render at 2× oversampling relative to the current zoom level.
-        // MuPDF produces a bitmap 2× wider/taller than what the screen needs;
-        // WPF bicubic-downsamples it to the logical display size, giving crisp
-        // edges on both text and embedded images at any zoom.
+        // Render at exactly the screen's physical pixel density so the bitmap maps
+        // 1:1 to physical pixels — WPF performs no downscale and applies no blur.
+        // MuPDF AA=8 at the native scale is the sole anti-aliasing step, which
+        // gives sharper text than oversampling + Fant-downscaling ever could.
         //
-        // Why 2×: at 1× (native), effective PDF DPI = Scale×72. At typical Fit-to-Width
-        // scales (~1.5×), that is only 108 DPI — visibly soft for embedded photos and
-        // fine text. At 2× oversampling, effective DPI = Scale×72×2 ≥ 216 — comparable
-        // to a 200 DPI print and indistinguishable from the source document on screen.
+        // physicalScale = Scale × dpiScaleX  →  BitmapSource DPI = 96×dpiScaleX
+        // WPF logical size = pixels ÷ dpiScaleX = WidthPt×Scale  ✓ (no WPF rescaling)
         //
-        // Layout is unaffected: BitmapSource.dpiX = 96×renderDpiScale, so Stretch="None"
-        // still displays at exactly BitmapWidth×BitmapHeight logical pixels.
-        //
-        // Cap physicalScale at 4× to keep per-page memory ≤ ~32 MB (A4 at 4× = 32 MP).
-        // At zoom levels where Scale itself already exceeds 4×, no boost is needed.
-        const double OversampleFactor = 2.0;
-        const double MaxPhysicalScale = 4.0;
-        double boost = Math.Min(OversampleFactor, MaxPhysicalScale / Math.Max(ViewerVm.Scale, 0.01));
-        double renderDpiScale = Math.Max(dpi.DpiScaleX, boost);
+        // Cap at 6× (~72 MB for A4) to cover common high-DPI scenarios without
+        // upscaling: 150% DPI × Scale≈3.2 (full-HD maximised) and 200% DPI × Scale≈3.0
+        // both stay within 6× and remain 1:1. Only extreme zoom on 200%+ DPI screens
+        // slightly exceeds the cap and WPF upscales via Fant — acceptable at that zoom.
+        const double MaxPhysicalScale = 6.0;
+        double renderDpiScale = Math.Min(dpi.DpiScaleX, MaxPhysicalScale / Math.Max(ViewerVm.Scale, 0.001));
 
         _cts?.Cancel();
         _cts = new CancellationTokenSource();

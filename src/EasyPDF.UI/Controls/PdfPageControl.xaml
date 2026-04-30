@@ -33,11 +33,24 @@
                 <RotateTransform Angle="{Binding Rotation}" />
             </Grid.LayoutTransform>
             <Image x:Name="PageImage"
-                   Stretch="None"
                    UseLayoutRounding="True"
                    RenderOptions.BitmapScalingMode="Fant"
                    Source="{Binding RenderedPage, Converter={StaticResource PageConverter}}"
-                   Visibility="{Binding RenderedPage, Converter={StaticResource NullToVis}}" />
+                   Visibility="{Binding RenderedPage, Converter={StaticResource NullToVis}}">
+                <Image.Style>
+                    <Style TargetType="Image">
+                        <!-- Default: 1:1 pixel mapping — no WPF scaling, no blur. -->
+                        <Setter Property="Stretch" Value="None" />
+                        <Style.Triggers>
+                            <!-- While the old bitmap is stale (scale changed, fresh render pending),
+                                 stretch it to fill the new container so there's no blank flash. -->
+                            <DataTrigger Binding="{Binding IsStale}" Value="True">
+                                <Setter Property="Stretch" Value="Uniform" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Image.Style>
+            </Image>
 
             <!-- Loading spinner shown while rendering -->
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -140,12 +153,12 @@
             </Border>
 
             <!-- Page number badge -->
-            <Border HorizontalAlignment="Center" VerticalAlignment="Bottom"
+            <!--   <Border HorizontalAlignment="Center" VerticalAlignment="Bottom"
                     Margin="0,0,0,6" Padding="8,2"
                     Background="#80000000" CornerRadius="10">
-                <TextBlock Text="{Binding DisplayNumber}"
+                  <TextBlock Text="{Binding DisplayNumber}"
                            Foreground="White" FontSize="11" />
-            </Border>
+            </Border> -->
         </Grid>
     </Grid>
 </UserControl>

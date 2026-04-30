@@ -85,6 +85,11 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
 
             _logger.LogInformation("Opening PDF: {Path}", filePath);
             _context = new MuPDFContext();
+            // Maximum anti-aliasing (0–8 scale). MuPDF default is lower and produces
+            // visibly jaggy text and edges — setting all three to 8 eliminates this.
+            _context.AntiAliasing        = 8;
+            _context.TextAntiAliasing    = 8;
+            _context.GraphicsAntiAliasing = 8;
             _muDoc   = new MuPDFDocument(_context, filePath);
 
             // Handle password-protected PDFs.

@@ -31,6 +31,7 @@ public partial class MainWindow : Window
     {
         _hwndSource?.RemoveHook(WndProc);
         SavePlacement();
+        _ = _vm.SaveLastPageAsync(); // fire-and-forget: persists last page on quit
         base.OnClosed(e);
     }
 

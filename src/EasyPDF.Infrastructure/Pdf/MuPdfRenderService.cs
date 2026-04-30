@@ -14,10 +14,10 @@ namespace EasyPDF.Infrastructure.Pdf;
 /// causing STATUS_STACK_BUFFER_OVERRUN (0xC0000409) crashes for complex PDFs.
 ///
 /// Concurrency:
-///   Page renders   — up to 4 concurrent  (SemaphoreSlim _throttle)
-///   Thumbnail rend — up to 2 concurrent  (SemaphoreSlim _thumbThrottle)
-///   The two semaphores are independent: thumbnails can never starve the main viewer.
-///   Both share the same MuPdfDispatcher pool (6 large-stack threads total).
+///   All renders (page + thumbnail) are serialised through a single SemaphoreSlim(1,1).
+///   MuPDF's fz_context is not thread-safe — concurrent doc.Render() calls on the same
+///   context cause SEHException. The dispatcher pool (6 large-stack threads) handles
+///   queuing; only one render executes natively at a time.
 ///
 /// Thread-safety: every native call enters UseDocument(), which holds the document
 /// read lock for the duration, preventing Close() from disposing MuPDFDocument
