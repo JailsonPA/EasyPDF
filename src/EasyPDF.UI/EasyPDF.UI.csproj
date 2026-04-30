@@ -40,6 +40,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <Resource Include="Assets\app.ico" />
+    <Resource Include="Assets\app-256.png" />
   </ItemGroup>
 
 </Project>
