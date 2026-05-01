@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -16,8 +16,9 @@
     <FileVersion>1.5.0.0</FileVersion>
     <Product>EasyPDF</Product>
     <Company>Jailson Prazeres</Company>
-    <Copyright>© 2026 Jailson Prazeres</Copyright>
-    <Description>Fast, lightweight PDF viewer for Windows — powered by MuPDF and .NET 10</Description>
+    <Copyright>Â© 2026 Jailson Prazeres</Copyright>
+    <Description>Fast, lightweight PDF viewer for Windows â€” powered by MuPDF and .NET 10</Description>
+    <StartupObject>EasyPDF.UI.Program</StartupObject>
   </PropertyGroup>
 
   <ItemGroup>
@@ -28,6 +29,7 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.7" />
     <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.142" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Velopack" Version="0.0.*" />
   </ItemGroup>
 
   <ItemGroup>
