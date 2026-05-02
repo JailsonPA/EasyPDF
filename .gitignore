@@ -49,6 +49,7 @@ coverage/
 
 ## Publish / release output
 publish/
+releases/
 drop/
 
 ## Claude Code session data (not project source)

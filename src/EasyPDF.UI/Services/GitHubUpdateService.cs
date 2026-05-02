@@ -55,6 +55,13 @@ internal sealed class GitHubUpdateService : IUpdateService
         }
     }
 
+    public bool CanInstall => false;
+
+    public Task DownloadUpdateAsync(UpdateInfo update, IProgress<int>? progress = null, CancellationToken ct = default) =>
+        Task.CompletedTask;
+
+    public void ApplyUpdateAndRestart() { }
+
     private static Version GetCurrentVersion() =>
         Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(1, 0, 0, 0);
 

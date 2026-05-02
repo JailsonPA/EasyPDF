@@ -68,13 +68,14 @@ internal static class ServiceConfiguration
         services.AddSingleton<IThemeService, WpfThemeService>();
         services.AddSingleton<IDialogService, WpfDialogService>();
         services.AddSingleton<IPrintService, WpfPrintService>();
+        services.AddSingleton<IExportService, WpfExportService>();
         services.AddSingleton<IUpdateService>(_ =>
         {
             string owner = config.GetValue<string>("GitHub:Owner") ?? "JailsonPA";
             string repo  = config.GetValue<string>("GitHub:Repo")  ?? "EasyPDF";
             bool   check = config.GetValue<bool>("GitHub:CheckForUpdates", true);
             return check
-                ? new GitHubUpdateService(owner, repo)
+                ? new VelopackUpdateService(owner, repo)
                 : new NoOpUpdateService();
         });
 

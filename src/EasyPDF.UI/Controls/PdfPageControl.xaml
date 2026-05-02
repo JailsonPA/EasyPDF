@@ -11,154 +11,144 @@
         <conv:NullToVisibilityConverter x:Key="NullToVisInv" Invert="True" />
     </UserControl.Resources>
 
-    <Grid>
-        <!-- Decoration layer: empty border carries the shadow effect.
-             No children → effect pipeline only rasterizes a flat rectangle,
-             never touching the page bitmap. -->
-        <Border Margin="8" CornerRadius="2"
-                Background="{DynamicResource SurfaceBrush}">
+    <!-- Outer Grid holds two layers in the same cell: shadow behind, content in front.
+         The Effect lives only on the shadow layer — it never touches page pixels.
+         Page background is hard-coded White so the app theme cannot affect PDF content. -->
+    <Grid Margin="8">
+
+        <!-- Layer 1 (back): shadow only. Empty border — Effect rasterises a flat
+             white rectangle, keeping the off-screen texture away from the image. -->
+        <Border CornerRadius="2" Background="White" IsHitTestVisible="False">
             <Border.Effect>
                 <DropShadowEffect ShadowDepth="3" BlurRadius="10" Opacity="0.35" Color="Black" />
             </Border.Effect>
         </Border>
 
-        <!-- Content layer: no Effect → Image goes directly through the GPU path,
-             rendered at 1:1 logical pixels with full MuPDF quality.
-             LayoutTransform rotates the entire content (Image + overlays) together so
-             that highlight coordinates remain correct without any coordinate re-mapping. -->
-        <Grid Margin="8"
-              HorizontalAlignment="Center"
-              VerticalAlignment="Center">
-            <Grid.LayoutTransform>
-                <RotateTransform Angle="{Binding Rotation}" />
-            </Grid.LayoutTransform>
-            <Image x:Name="PageImage"
-                   UseLayoutRounding="True"
-                   RenderOptions.BitmapScalingMode="Fant"
-                   Source="{Binding RenderedPage, Converter={StaticResource PageConverter}}"
-                   Visibility="{Binding RenderedPage, Converter={StaticResource NullToVis}}">
-                <Image.Style>
-                    <Style TargetType="Image">
-                        <!-- Default: 1:1 pixel mapping — no WPF scaling, no blur. -->
-                        <Setter Property="Stretch" Value="None" />
-                        <Style.Triggers>
-                            <!-- While the old bitmap is stale (scale changed, fresh render pending),
-                                 stretch it to fill the new container so there's no blank flash. -->
-                            <DataTrigger Binding="{Binding IsStale}" Value="True">
-                                <Setter Property="Stretch" Value="Uniform" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Image.Style>
-            </Image>
+        <!-- Layer 2 (front): content. No Effect, always White — theme-independent. -->
+        <Border CornerRadius="2" Background="White" ClipToBounds="True">
+            <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Grid.LayoutTransform>
+                    <RotateTransform Angle="{Binding Rotation}" />
+                </Grid.LayoutTransform>
 
-            <!-- Loading spinner shown while rendering -->
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
-                        Visibility="{Binding IsRendering, Converter={StaticResource BoolToVis}}">
-                <TextBlock Text="&#x231B;" FontSize="24"
-                           Foreground="{DynamicResource TextSecondaryBrush}"
-                           HorizontalAlignment="Center" />
-                <TextBlock Text="Rendering…" FontSize="11" Margin="0,4,0,0"
-                           Foreground="{DynamicResource TextSecondaryBrush}"
-                           HorizontalAlignment="Center" />
-            </StackPanel>
-
-            <!-- Placeholder skeleton shown before first render -->
-            <Border Background="{DynamicResource SurfaceAltBrush}"
-                    Visibility="{Binding RenderedPage, Converter={StaticResource NullToVisInv}}">
-                <TextBlock Text="{Binding DisplayNumber}"
-                           HorizontalAlignment="Center" VerticalAlignment="Center"
-                           Foreground="{DynamicResource TextDisabledBrush}"
-                           FontSize="18" />
-            </Border>
-
-            <!-- Text selection overlay (blue) — drawn above the page, below search highlights.
-                 Shows live bounding rect during drag, then word-level quads on release.
-                 Sized to BitmapWidth/Height (natural orientation) because the parent Grid
-                 is already rotated via LayoutTransform — highlights stay in natural coords. -->
-            <Canvas IsHitTestVisible="False"
-                    Width="{Binding BitmapWidth}"
-                    Height="{Binding BitmapHeight}"
-                    HorizontalAlignment="Left"
-                    VerticalAlignment="Top"
-                    ClipToBounds="True">
-                <ItemsControl ItemsSource="{Binding SelectionHighlights}"
-                              IsHitTestVisible="False">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <Canvas IsItemsHost="True" />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemContainerStyle>
-                        <Style TargetType="ContentPresenter">
-                            <Setter Property="Canvas.Left" Value="{Binding X}" />
-                            <Setter Property="Canvas.Top"  Value="{Binding Y}" />
+                <Image x:Name="PageImage"
+                       UseLayoutRounding="True"
+                       RenderOptions.BitmapScalingMode="Fant"
+                       Source="{Binding RenderedPage, Converter={StaticResource PageConverter}}"
+                       Visibility="{Binding RenderedPage, Converter={StaticResource NullToVis}}">
+                    <Image.Style>
+                        <Style TargetType="Image">
+                            <!-- Default: 1:1 pixel mapping — no WPF scaling, no blur. -->
+                            <Setter Property="Stretch" Value="None" />
+                            <Style.Triggers>
+                                <!-- While the old bitmap is stale (scale changed, fresh render pending),
+                                     stretch it to fill the new container so there's no blank flash. -->
+                                <DataTrigger Binding="{Binding IsStale}" Value="True">
+                                    <Setter Property="Stretch" Value="Uniform" />
+                                </DataTrigger>
+                            </Style.Triggers>
                         </Style>
-                    </ItemsControl.ItemContainerStyle>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Rectangle Width="{Binding Width}" Height="{Binding Height}"
-                                       Fill="#503399FF" IsHitTestVisible="False" />
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </Canvas>
+                    </Image.Style>
+                </Image>
 
-            <!-- Search highlight overlay — drawn above the page bitmap, below badges.
-                 IsHitTestVisible=False so mouse events pass through to the ScrollViewer. -->
-            <Canvas IsHitTestVisible="False"
-                    Width="{Binding BitmapWidth}"
-                    Height="{Binding BitmapHeight}"
-                    HorizontalAlignment="Left"
-                    VerticalAlignment="Top"
-                    ClipToBounds="True">
-                <ItemsControl ItemsSource="{Binding SearchHighlights}"
-                              IsHitTestVisible="False">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <Canvas IsItemsHost="True" />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemContainerStyle>
-                        <Style TargetType="ContentPresenter">
-                            <Setter Property="Canvas.Left" Value="{Binding X}" />
-                            <Setter Property="Canvas.Top"  Value="{Binding Y}" />
-                        </Style>
-                    </ItemsControl.ItemContainerStyle>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Rectangle Width="{Binding Width}" Height="{Binding Height}"
-                                       IsHitTestVisible="False">
-                                <Rectangle.Style>
-                                    <Style TargetType="Rectangle">
-                                        <Setter Property="Fill" Value="#60FFDD00" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsActive}" Value="True">
-                                                <Setter Property="Fill" Value="#80FF8C00" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Rectangle.Style>
-                            </Rectangle>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </Canvas>
+                <!-- Loading spinner shown while rendering -->
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Visibility="{Binding IsRendering, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="&#x231B;" FontSize="24"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               HorizontalAlignment="Center" />
+                    <TextBlock Text="Rendering…" FontSize="11" Margin="0,4,0,0"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               HorizontalAlignment="Center" />
+                </StackPanel>
 
-            <!-- Error overlay -->
-            <Border Background="#AA880000" CornerRadius="2"
-                    Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
-                <TextBlock Text="Failed to render page" Foreground="White"
-                           HorizontalAlignment="Center" VerticalAlignment="Center" />
-            </Border>
+                <!-- Placeholder skeleton shown before first render.
+                     Always White — the SurfaceAltBrush was dark (#2D2D30) in
+                     dark mode, making the page look "darkened" while rendering. -->
+                <Border Background="White"
+                        Visibility="{Binding RenderedPage, Converter={StaticResource NullToVisInv}}">
+                    <TextBlock Text="{Binding DisplayNumber}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextDisabledBrush}"
+                               FontSize="18" />
+                </Border>
 
-            <!-- Page number badge -->
-            <!--   <Border HorizontalAlignment="Center" VerticalAlignment="Bottom"
-                    Margin="0,0,0,6" Padding="8,2"
-                    Background="#80000000" CornerRadius="10">
-                  <TextBlock Text="{Binding DisplayNumber}"
-                           Foreground="White" FontSize="11" />
-            </Border> -->
-        </Grid>
+                <!-- Text selection overlay (blue) -->
+                <Canvas IsHitTestVisible="False"
+                        Width="{Binding BitmapWidth}"
+                        Height="{Binding BitmapHeight}"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top"
+                        ClipToBounds="True">
+                    <ItemsControl ItemsSource="{Binding SelectionHighlights}"
+                                  IsHitTestVisible="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <Canvas IsItemsHost="True" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="Canvas.Left" Value="{Binding X}" />
+                                <Setter Property="Canvas.Top"  Value="{Binding Y}" />
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Rectangle Width="{Binding Width}" Height="{Binding Height}"
+                                           Fill="#503399FF" IsHitTestVisible="False" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Canvas>
+
+                <!-- Search highlight overlay -->
+                <Canvas IsHitTestVisible="False"
+                        Width="{Binding BitmapWidth}"
+                        Height="{Binding BitmapHeight}"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top"
+                        ClipToBounds="True">
+                    <ItemsControl ItemsSource="{Binding SearchHighlights}"
+                                  IsHitTestVisible="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <Canvas IsItemsHost="True" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="Canvas.Left" Value="{Binding X}" />
+                                <Setter Property="Canvas.Top"  Value="{Binding Y}" />
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Rectangle Width="{Binding Width}" Height="{Binding Height}"
+                                           IsHitTestVisible="False">
+                                    <Rectangle.Style>
+                                        <Style TargetType="Rectangle">
+                                            <Setter Property="Fill" Value="#60FFDD00" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                                    <Setter Property="Fill" Value="#80FF8C00" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Rectangle.Style>
+                                </Rectangle>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Canvas>
+
+                <!-- Error overlay -->
+                <Border Background="#AA880000" CornerRadius="2"
+                        Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="Failed to render page" Foreground="White"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+            </Grid>
+        </Border>
     </Grid>
 </UserControl>

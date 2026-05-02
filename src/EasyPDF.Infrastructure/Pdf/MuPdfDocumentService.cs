@@ -113,7 +113,10 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
                 FileSizeBytes:   info.Length,
                 OpenedAt:        DateTime.UtcNow,
                 Pages:           pages,
-                TableOfContents: toc);
+                TableOfContents: toc,
+                PdfVersion:      ReadPdfVersion(filePath),
+                IsEncrypted:     _muDoc.EncryptionState == EncryptionState.Unlocked,
+                IsRestricted:    _muDoc.RestrictionState == RestrictionState.Restricted);
 
             _logger.LogInformation("Opened {Pages} pages", CurrentDocument.PageCount);
         }
@@ -199,7 +202,9 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
             var children = item.Children is not null
                 ? BuildTocFromItems(item.Children, 1)
                 : [];
-            list.Add(new TocEntry(item.Title ?? string.Empty, item.Page, 0, children));
+            // PageNumber is the 0-based absolute page index in the document.
+            // Page is chapter-relative and only differs for reflowable formats (EPUB).
+            list.Add(new TocEntry(item.Title ?? string.Empty, item.PageNumber, 0, children));
         }
         return list;
     }
@@ -213,9 +218,28 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
             var children = item.Children is not null
                 ? BuildTocFromItems(item.Children, level + 1)
                 : (IReadOnlyList<TocEntry>)[];
-            list.Add(new TocEntry(item.Title ?? string.Empty, item.Page, level, children));
+            list.Add(new TocEntry(item.Title ?? string.Empty, item.PageNumber, level, children));
         }
         return list;
+    }
+
+    private static string ReadPdfVersion(string filePath)
+    {
+        try
+        {
+            Span<byte> buf = stackalloc byte[16];
+            using var f = File.OpenRead(filePath);
+            int read = f.Read(buf);
+            string header = System.Text.Encoding.ASCII.GetString(buf[..read]);
+            if (header.StartsWith("%PDF-", StringComparison.Ordinal))
+            {
+                int end = header.IndexOfAny(['\r', '\n', ' '], 5);
+                string ver = end > 5 ? header[5..end] : header[5..];
+                return "PDF " + ver.Trim();
+            }
+        }
+        catch { }
+        return "Unknown";
     }
 
     public async ValueTask DisposeAsync()

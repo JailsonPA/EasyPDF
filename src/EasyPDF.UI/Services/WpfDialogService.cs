@@ -43,4 +43,16 @@ public sealed class WpfDialogService : IDialogService
         bool? result = window.ShowDialog();
         return Task.FromResult(result == true ? window.Password : null);
     }
+
+    public Task<string?> SaveImageFileAsync(string suggestedName)
+    {
+        var dlg = new SaveFileDialog
+        {
+            Title      = "Export Page as Image",
+            FileName   = suggestedName,
+            Filter     = "PNG Image (*.png)|*.png|JPEG Image (*.jpg;*.jpeg)|*.jpg;*.jpeg",
+            DefaultExt = ".png"
+        };
+        return Task.FromResult(dlg.ShowDialog() == true ? dlg.FileName : null);
+    }
 }

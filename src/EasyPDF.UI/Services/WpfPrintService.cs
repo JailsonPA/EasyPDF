@@ -1,6 +1,7 @@
 using EasyPDF.Application.Interfaces;
 using EasyPDF.Core.Interfaces;
 using EasyPDF.Core.Models;
+using Microsoft.Extensions.Logging;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Markup;
@@ -12,10 +13,12 @@ namespace EasyPDF.UI.Services;
 internal sealed class WpfPrintService : IPrintService
 {
     private readonly IPdfRenderService _renderService;
+    private readonly ILogger<WpfPrintService> _logger;
 
-    public WpfPrintService(IPdfRenderService renderService)
+    public WpfPrintService(IPdfRenderService renderService, ILogger<WpfPrintService> logger)
     {
         _renderService = renderService;
+        _logger = logger;
     }
 
     public async Task PrintAsync(string documentTitle, IReadOnlyList<PdfPageInfo> pages, CancellationToken ct = default)
@@ -56,7 +59,11 @@ internal sealed class WpfPrintService : IPrintService
                 rendered = await _renderService.RenderPageAsync(info.Index, renderScale, 1.0, ct);
             }
             catch (OperationCanceledException) { break; }
-            catch { continue; }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to render page {Page} for printing — skipping", i + 1);
+                continue;
+            }
 
             var format = rendered.BitsPerPixel == 32 ? PixelFormats.Bgra32 : PixelFormats.Bgr24;
             var bitmap = BitmapSource.Create(

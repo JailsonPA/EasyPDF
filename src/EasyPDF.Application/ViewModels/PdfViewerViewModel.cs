@@ -25,6 +25,7 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
     private readonly ILogger<PdfViewerViewModel> _logger;
     private readonly Dictionary<int, CancellationTokenSource> _pendingRenders = new();
     private bool _applyingFitToWidth;
+    private bool _applyingFitToPage;
 
     // Search highlight state — stored so highlights can be recomputed after zoom changes.
     private IReadOnlyList<SearchResult> _searchResults = [];
@@ -56,6 +57,9 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isFitToWidth = true;
 
+    [ObservableProperty]
+    private bool _isFitToPage;
+
     // Pages exposed to the View; the View's ItemsControl virtualizes rendering.
     // BulkObservableCollection fires a single Reset instead of N Add notifications.
     public BulkObservableCollection<PageViewModel> Pages { get; } = new();
@@ -71,6 +75,7 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
     // call FitToWidth() immediately — IsFitToWidth doesn't change, so no
     // PropertyChanged fires and SizeChanged doesn't fire on a content-only reload.
     public event EventHandler? FitToWidthRequested;
+    public event EventHandler? FitToPageRequested;
 
     public PdfViewerViewModel(
         IPdfRenderService renderService,
@@ -99,6 +104,8 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
 
         if (IsFitToWidth)
             FitToWidthRequested?.Invoke(this, EventArgs.Empty);
+        else if (IsFitToPage)
+            FitToPageRequested?.Invoke(this, EventArgs.Empty);
     }
 
     public void Clear()
@@ -169,6 +176,25 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
+    /// Renders a page at 150 DPI for placing on the system clipboard.
+    /// Returns null on failure or cancellation.
+    /// </summary>
+    public async Task<RenderedPage?> RenderPageForClipboardAsync(int pageIndex, CancellationToken ct = default)
+    {
+        const double clipboardDpi = 150.0;
+        try
+        {
+            return await _renderService.RenderPageAsync(pageIndex, clipboardDpi / 72.0, 1.0, ct)
+                                       .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Clipboard render failed for page {Page}", pageIndex);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Scales all pages to exactly fill <paramref name="viewportWidth"/>.
     /// Guards against the resulting OnScaleChanged resetting IsFitToWidth.
     /// </summary>
@@ -191,6 +217,27 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
+    /// Scales all pages so one page height exactly fills <paramref name="viewportHeight"/>.
+    /// </summary>
+    public void FitToPage(double viewportHeight)
+    {
+        if (Pages.Count == 0 || viewportHeight <= 0) return;
+        var firstPage = Pages[0];
+        if (firstPage.HeightPt <= 0) return;
+        _applyingFitToPage = true;
+        try
+        {
+            // 32 = 16 (shadow margin) + 8 (page top+bottom margin) + 8 (buffer)
+            Scale = Math.Clamp((viewportHeight - 32) / firstPage.HeightPt, MinScale, MaxScale);
+            IsFitToPage = true;
+        }
+        finally
+        {
+            _applyingFitToPage = false;
+        }
+    }
+
+    /// <summary>
     /// Invalidates rendered bitmaps when zoom changes so pages re-render at the new resolution.
     /// Also recomputes highlight positions to match the new scale.
     /// </summary>
@@ -198,6 +245,8 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
     {
         if (!_applyingFitToWidth)
             IsFitToWidth = false;
+        if (!_applyingFitToPage)
+            IsFitToPage = false;
         CancelAllPendingRenders();
         foreach (var p in Pages)
         {
@@ -292,7 +341,11 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
             _selectedText = result.Text;
         }
         catch (OperationCanceledException) { }
-        catch { pageVm.SelectionHighlights = []; }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Text selection extraction failed on page {Page}", pageVm.PageIndex);
+            pageVm.SelectionHighlights = [];
+        }
     }
 
     // MuPDF search quads use top-left origin, Y increases downward — same as WPF.
@@ -330,6 +383,9 @@ public sealed partial class PdfViewerViewModel : ObservableObject, IDisposable
 
     [RelayCommand]
     private void FitToWidthMode() => IsFitToWidth = true; // View applies FitToWidth via PropertyChanged
+
+    [RelayCommand]
+    private void FitToPageMode() => IsFitToPage = true; // View applies FitToPage via PropertyChanged
 
     [RelayCommand]
     private void ZoomIn() => Scale = Math.Min(MaxScale, Scale + ZoomStep);

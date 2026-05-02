@@ -10,21 +10,14 @@
         <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
     </UserControl.Resources>
 
-    <!-- The ScrollViewer is the outer panning surface.
-         MouseWheel zoom is handled in code-behind to prevent scroll interference. -->
-    <!-- CanContentScroll="True" must live on the ScrollViewer so the VirtualizingStackPanel
-         can register it as its scroll owner and pixel-virtualise correctly.
-         Placing it on the ItemsControl (as an attached property) has no effect
-         because ItemsControl is not the scroll host — the ScrollViewer is. -->
     <ScrollViewer x:Name="MainScroller"
                   HorizontalScrollBarVisibility="Auto"
                   VerticalScrollBarVisibility="Auto"
                   CanContentScroll="True"
                   PanningMode="Both"
-                  Background="Transparent">
+                  Background="Transparent"
+                  ScrollChanged="MainScroller_ScrollChanged">
 
-        <!-- Virtualized page list. Each page's Width/Height is scaled via PageViewModel.DisplayWidth/Height,
-             so the ItemsControl always has the correct scrollable extent without a LayoutTransform. -->
         <ItemsControl x:Name="PageList"
                       ItemsSource="{Binding Pages}"
                       HorizontalAlignment="Center"

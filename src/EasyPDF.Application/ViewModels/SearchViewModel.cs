@@ -21,7 +21,11 @@ public sealed partial class SearchViewModel : ObservableObject
     private int _totalResults;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CurrentResultDisplay))]
     private int _currentResultIndex = -1;
+
+    /// <summary>1-based index for display (0 when no result is active yet).</summary>
+    public int CurrentResultDisplay => CurrentResultIndex < 0 ? 0 : CurrentResultIndex + 1;
 
     [ObservableProperty]
     private bool _isSearching;

@@ -55,14 +55,19 @@ public partial class ThumbnailControl : UserControl
         if (thumb.RenderedPage is not null) return;
 
         var dpi = VisualTreeHelper.GetDpi(this);
-        _cts?.Cancel();
+        CancelAndDisposeCts();
         _cts = new CancellationTokenSource();
         _ = SidebarVm.OnThumbnailBecameVisibleAsync(thumb.PageIndex, dpi.DpiScaleX, _cts.Token);
     }
 
-    private void OnUnloaded(object sender, RoutedEventArgs e)
+    private void OnUnloaded(object sender, RoutedEventArgs e) => CancelAndDisposeCts();
+
+    private void CancelAndDisposeCts()
     {
-        _cts?.Cancel();
-        _cts?.Dispose();
+        var cts = _cts;
+        _cts = null;
+        if (cts is null) return;
+        try { cts.Cancel(); } catch (ObjectDisposedException) { }
+        cts.Dispose();
     }
 }

@@ -20,6 +20,7 @@ public sealed class MainViewModelTests
         public IDialogService         DialogSvc    { get; } = Substitute.For<IDialogService>();
         public IThemeService          ThemeSvc     { get; } = Substitute.For<IThemeService>();
         public IPrintService          PrintSvc     { get; } = Substitute.For<IPrintService>();
+        public IExportService         ExportSvc    { get; } = Substitute.For<IExportService>();
         public IUpdateService         UpdateSvc    { get; } = Substitute.For<IUpdateService>();
         public IBookmarkRepository    BookmarkRepo { get; } = Substitute.For<IBookmarkRepository>();
         public ISearchService         SearchSvc    { get; } = Substitute.For<ISearchService>();
@@ -44,7 +45,7 @@ public sealed class MainViewModelTests
         var search  = new SearchViewModel(f.SearchSvc, NullLogger<SearchViewModel>.Instance);
 
         var vm = new MainViewModel(
-            f.DocService, f.RecentRepo, f.DialogSvc, f.ThemeSvc, f.PrintSvc, f.UpdateSvc,
+            f.DocService, f.RecentRepo, f.DialogSvc, f.ThemeSvc, f.PrintSvc, f.ExportSvc, f.UpdateSvc,
             new AppSettings(), viewer, sidebar, search,
             NullLogger<MainViewModel>.Instance);
 

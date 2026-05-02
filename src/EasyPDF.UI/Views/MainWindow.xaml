@@ -5,6 +5,7 @@
         xmlns:views="clr-namespace:EasyPDF.UI.Views"
         xmlns:conv="clr-namespace:EasyPDF.UI.Converters"
         xmlns:bhv="clr-namespace:EasyPDF.UI.Behaviors"
+        xmlns:h="clr-namespace:EasyPDF.UI.Helpers"
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
         xmlns:core="clr-namespace:EasyPDF.Core.Models;assembly=EasyPDF.Core"
         Title="{Binding Title}"
@@ -36,6 +37,7 @@
             <RowDefinition Height="32" />   <!-- Custom title bar -->
             <RowDefinition Height="44" />   <!-- Toolbar -->
             <RowDefinition Height="Auto" /> <!-- Update banner (hidden when no update) -->
+            <RowDefinition Height="Auto" /> <!-- File changed banner (hidden when unchanged) -->
             <RowDefinition Height="Auto" /> <!-- Search panel (collapsible) -->
             <RowDefinition Height="*" />    <!-- Main content -->
             <RowDefinition Height="24" />   <!-- Status bar -->
@@ -52,7 +54,9 @@
 
             <!-- App icon + name -->
             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0">
-                <TextBlock Text="📄" FontSize="14" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <!--  <Image Source="pack://application:,,,/Assets/app.ico"
+                       Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0"
+                       RenderOptions.BitmapScalingMode="HighQuality" />  -->
                 <TextBlock Text="EasyPDF" FontSize="12" FontWeight="SemiBold"
                            Foreground="{DynamicResource WindowChromeTextBrush}"
                            VerticalAlignment="Center" />
@@ -85,7 +89,8 @@
         <Border Grid.Row="1"
                 Background="{DynamicResource ToolbarBrush}"
                 BorderBrush="{DynamicResource BorderBrush}"
-                BorderThickness="0,0,0,1">
+                BorderThickness="0,0,0,1"
+                MouseLeftButtonDown="OnTitleBarMouseDown">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />  <!-- Sidebar toggle + Open -->
@@ -98,18 +103,37 @@
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0">
                     <Button Content="☰" Style="{DynamicResource ToolbarButtonStyle}"
                             AutomationProperties.Name="Toggle sidebar"
-                            ToolTip="Toggle sidebar"
+                            h:Tip.Title="Toggle sidebar"
                             Command="{Binding Sidebar.ToggleVisibilityCommand}" />
                     <Separator Style="{DynamicResource {x:Static ToolBar.SeparatorStyleKey}}"
                                Width="1" Height="20" Margin="4,0" />
                     <Button Style="{DynamicResource ToolbarButtonStyle}"
-                            Command="{Binding OpenFileCommand}" ToolTip="Open PDF (Ctrl+O)">
+                            Command="{Binding OpenFileCommand}"
+                            h:Tip.Title="Open PDF" h:Tip.Keys="Ctrl+O">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE8E5;" FontFamily="Segoe MDL2 Assets"
                                        FontSize="14" VerticalAlignment="Center" Margin="0,0,5,0" />
-                            <TextBlock Text="Open" VerticalAlignment="Center" />
+                            <TextBlock  VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
+
+                    <Button Content="&#xE838;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
+                            AutomationProperties.Name="Show in Explorer"
+                            h:Tip.Title="Show in Explorer"
+                            IsEnabled="{Binding HasDocument}"
+                            Command="{Binding OpenInExplorerCommand}" />
+
+                    <Button Content="&#xE8B7;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
+                             AutomationProperties.Name="File properties"
+                             h:Tip.Title="File properties" h:Tip.Keys="Alt+Enter"
+                             IsEnabled="{Binding HasDocument}"
+                             Click="PropertiesClick" />
+
+                    <Button Content="&#xE721;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
+                             AutomationProperties.Name="Toggle search panel"
+                             Command="{Binding ToggleSearchCommand}"
+                             h:Tip.Title="Search" h:Tip.Keys="Ctrl+F"
+                             IsEnabled="{Binding HasDocument}" />       
                 </StackPanel>
 
                 <!-- Centre: page navigation -->
@@ -119,10 +143,11 @@
 
                     <Button Content="⏮" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
                             AutomationProperties.Name="First page"
-                            Command="{Binding Viewer.FirstPageCommand}" ToolTip="First page" />
+                            Command="{Binding Viewer.FirstPageCommand}" h:Tip.Title="First page" />
                     <Button Content="◀" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
                             AutomationProperties.Name="Previous page"
-                            Command="{Binding Viewer.PreviousPageCommand}" ToolTip="Previous page (←)" />
+                            Command="{Binding Viewer.PreviousPageCommand}"
+                            h:Tip.Title="Previous page" h:Tip.Keys="← · PageUp" />
 
                     <Border Background="{DynamicResource SurfaceAltBrush}" Margin="4,0"
                             CornerRadius="4" Padding="4,2">
@@ -130,6 +155,8 @@
                             <TextBox x:Name="PageInputBox"
                                      AutomationProperties.Name="Page number"
                                      Width="36" FontSize="12"
+                                     h:Tip.Title="Go to page"
+                                     h:Tip.Keys="Ctrl+G  ·  Enter to navigate"
                                      Text="{Binding Viewer.CurrentPageIndex, Converter={StaticResource PageConv},
                                                     UpdateSourceTrigger=LostFocus}"
                                      VerticalContentAlignment="Center"
@@ -147,10 +174,11 @@
 
                     <Button Content="▶" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
                             AutomationProperties.Name="Next page"
-                            Command="{Binding Viewer.NextPageCommand}" ToolTip="Next page (→)" />
+                            Command="{Binding Viewer.NextPageCommand}"
+                            h:Tip.Title="Next page" h:Tip.Keys="→ · PageDown" />
                     <Button Content="⏭" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
                             AutomationProperties.Name="Last page"
-                            Command="{Binding Viewer.LastPageCommand}" ToolTip="Last page" />
+                            Command="{Binding Viewer.LastPageCommand}" h:Tip.Title="Last page" />
                 </StackPanel>
 
                 <!-- Right: zoom + bookmark + search + theme -->
@@ -160,67 +188,104 @@
 
                     <Button Content="&#xE71F;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
                             AutomationProperties.Name="Zoom out"
-                            Command="{Binding Viewer.ZoomOutCommand}" ToolTip="Zoom out (Ctrl+−)" />
+                            Command="{Binding Viewer.ZoomOutCommand}"
+                            h:Tip.Title="Zoom out" h:Tip.Keys="Ctrl+−" />
 
-                    <Border Background="{DynamicResource SurfaceAltBrush}" CornerRadius="4" Padding="6,2" Margin="2,0">
-                        <TextBox Width="52" FontSize="12" TextAlignment="Center"
-                                 AutomationProperties.Name="Zoom level"
-                                 BorderThickness="0" Background="Transparent"
-                                 Text="{Binding Viewer.Scale, Converter={StaticResource ZoomConv},
-                                                UpdateSourceTrigger=LostFocus}"
-                                 VerticalContentAlignment="Center"
-                                 KeyDown="ZoomInputKeyDown" />
-                    </Border>
+                    <ComboBox x:Name="ZoomComboBox"
+                              IsEditable="True"
+                              IsTextSearchEnabled="False"
+                              Width="80" FontSize="12"
+                              AutomationProperties.Name="Zoom level"
+                              h:Tip.Title="Zoom level"
+                              h:Tip.Keys="Ctrl+scroll  ·  type % then Enter"
+                              Text="{Binding Viewer.Scale, Converter={StaticResource ZoomConv},
+                                             UpdateSourceTrigger=LostFocus}"
+                              VerticalContentAlignment="Center"
+                              Margin="2,0"
+                              KeyDown="ZoomInputKeyDown"
+                              SelectionChanged="ZoomPresetSelected">
+                        <ComboBoxItem Content="50%" />
+                        <ComboBoxItem Content="75%" />
+                        <ComboBoxItem Content="100%" />
+                        <ComboBoxItem Content="125%" />
+                        <ComboBoxItem Content="150%" />
+                        <ComboBoxItem Content="200%" />
+                        <ComboBoxItem Content="300%" />
+                        <ComboBoxItem Content="400%" />
+                    </ComboBox>
 
                     <Button Content="&#xE8A3;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
                             AutomationProperties.Name="Zoom in"
-                            Command="{Binding Viewer.ZoomInCommand}" ToolTip="Zoom in (Ctrl++)" />
-                    <Button Content="⊡" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
+                            Command="{Binding Viewer.ZoomInCommand}"
+                            h:Tip.Title="Zoom in" h:Tip.Keys="Ctrl++" />
+                    <Button Content="⊡" FontSize="18" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
                             AutomationProperties.Name="Reset zoom"
-                            Command="{Binding Viewer.ResetZoomCommand}" ToolTip="Reset zoom (Ctrl+0)" />
-                    <Button Content="⊟" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
+                            Command="{Binding Viewer.ResetZoomCommand}"
+                            h:Tip.Title="Reset zoom" h:Tip.Keys="Ctrl+0" />
+                    <Button Content="⊟" FontSize="18" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
                             AutomationProperties.Name="Fit to width"
-                            Command="{Binding Viewer.FitToWidthModeCommand}" ToolTip="Fit to width" />
+                            Command="{Binding Viewer.FitToWidthModeCommand}"
+                            h:Tip.Title="Fit to width" />
+                    <Button Content="↕" FontSize="18" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
+                            AutomationProperties.Name="Fit to page"
+                            Command="{Binding Viewer.FitToPageModeCommand}"
+                            h:Tip.Title="Fit to page height" />
                     <Separator Style="{DynamicResource {x:Static ToolBar.SeparatorStyleKey}}"
                                Width="1" Height="20" Margin="4,0" />
-                    <Button Content="&#xE7AD;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
+                    <Button Content="&#xE7AD;"
+                            Style="{DynamicResource Mdl2IconButtonStyle}"
+                            Margin="1,0"
+                            RenderTransformOrigin="0.5,0.5"
                             AutomationProperties.Name="Rotate left"
                             Command="{Binding Viewer.RotateCurrentPageCounterClockwiseCommand}"
-                            ToolTip="Rotate page left (Ctrl+[)" />
-                    <Button Content="&#xE7AE;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
+                            h:Tip.Title="Rotate page left"
+                            h:Tip.Keys="Ctrl+[">
+                        <Button.RenderTransform>
+                            <ScaleTransform ScaleX="-1"/>
+                        </Button.RenderTransform>
+                    </Button>
+                    <Button Content="&#xE7AD;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
                             AutomationProperties.Name="Rotate right"
                             Command="{Binding Viewer.RotateCurrentPageClockwiseCommand}"
-                            ToolTip="Rotate page right (Ctrl+])" />
+                            h:Tip.Title="Rotate page right" h:Tip.Keys="Ctrl+]" />
                 </StackPanel>
 
                 <StackPanel Grid.Column="3" Orientation="Horizontal"
                             VerticalAlignment="Center" Margin="4,0">
-                    <Button Content="&#xE1C3;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
+                    <Button Content="&#xE734;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
                             AutomationProperties.Name="Add bookmark"
-                            Command="{Binding AddBookmarkCommand}" ToolTip="Add bookmark (Ctrl+B)"
-                            Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}" />
+                            Command="{Binding AddBookmarkCommand}"
+                            h:Tip.Title="Add bookmark" h:Tip.Keys="Ctrl+B"
+                            IsEnabled="{Binding HasDocument}" />
                     <Button Content="&#xE749;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
                             AutomationProperties.Name="Print"
-                            Command="{Binding PrintCommand}" ToolTip="Print (Ctrl+P)"
-                            Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}" />
-                    <Button Content="&#xE721;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
-                            AutomationProperties.Name="Toggle search panel"
-                            Command="{Binding ToggleSearchCommand}" ToolTip="Search (Ctrl+F)"
-                            Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}" />
+                            Command="{Binding PrintCommand}"
+                            h:Tip.Title="Print" h:Tip.Keys="Ctrl+P"
+                            IsEnabled="{Binding HasDocument}" />
+                    <Button Content="&#xEB9F;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
+                            AutomationProperties.Name="Export page as image"
+                            Command="{Binding ExportCurrentPageCommand}"
+                            h:Tip.Title="Export page as image" h:Tip.Keys="PNG · JPG"
+                            IsEnabled="{Binding HasDocument}" />
+                   
                     <Button Content="&#xE793;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
                             AutomationProperties.Name="Cycle theme"
-                            Command="{Binding ToggleThemeCommand}" ToolTip="Cycle theme: Dark / Light / High Contrast" />
+                            Command="{Binding ToggleThemeCommand}"
+                            h:Tip.Title="Cycle theme" h:Tip.Keys="Dark · Light · High Contrast" />
                     <Separator Style="{DynamicResource {x:Static ToolBar.SeparatorStyleKey}}"
                                Width="1" Height="20" Margin="4,0" />
+                    <Button Content="&#xE765;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
+                            AutomationProperties.Name="Keyboard shortcuts"
+                            h:Tip.Title="Keyboard shortcuts" h:Tip.Keys="F1"
+                            Click="ShortcutsClick" />
                     <Button Content="&#xE946;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
                             AutomationProperties.Name="About"
-                            ToolTip="About EasyPDF" Click="AboutClick" />
+                            h:Tip.Title="About EasyPDF" Click="AboutClick" />
                 </StackPanel>
             </Grid>
         </Border>
 
         <!-- ===== Update Banner ===== -->
-        <!-- Shown only when a newer GitHub release is detected. -->
         <Border Grid.Row="2"
                 Background="#E67E22"
                 Padding="12,6"
@@ -234,15 +299,43 @@
                         <Run Text="{Binding PendingUpdate.Version, Mode=OneWay}" />
                         <Run Text="is available." />
                     </TextBlock>
-                    <Button Content="Download" Margin="12,0,0,0"
-                            Padding="10,3"
-                            FontSize="12"
-                            Background="White" Foreground="#E67E22"
-                            BorderThickness="0"
-                            Cursor="Hand"
+
+                    <!-- Velopack: download in-app -->
+                    <Button Content="Download"
+                            Margin="12,0,0,0" Padding="10,3" FontSize="12"
+                            Background="White" Foreground="#E67E22" BorderThickness="0" Cursor="Hand"
+                            Command="{Binding DownloadUpdateCommand}"
+                            Visibility="{Binding CanDownloadUpdate, Converter={StaticResource BoolToVis}}"
+                            ToolTip="Download update" />
+
+                    <!-- Fallback: open browser (when Velopack not active, e.g. portable build) -->
+                    <Button Content="Open Page"
+                            Margin="12,0,0,0" Padding="10,3" FontSize="12"
+                            Background="White" Foreground="#E67E22" BorderThickness="0" Cursor="Hand"
                             Command="{Binding OpenReleasePageCommand}"
+                            Visibility="{Binding UpdateCanInstall, Converter={StaticResource InvBoolToVis}}"
                             ToolTip="Open release page in browser" />
+
+                    <!-- Download progress -->
+                    <StackPanel Orientation="Horizontal" Margin="12,0,0,0"
+                                Visibility="{Binding IsDownloadingUpdate, Converter={StaticResource BoolToVis}}">
+                        <ProgressBar Width="120" Height="6" Minimum="0" Maximum="100"
+                                     Value="{Binding UpdateDownloadProgress, Mode=OneWay}"
+                                     VerticalAlignment="Center" />
+                        <TextBlock FontSize="11" Foreground="White" Margin="6,0,0,0" VerticalAlignment="Center">
+                            <Run Text="{Binding UpdateDownloadProgress, Mode=OneWay}" /><Run Text="%" />
+                        </TextBlock>
+                    </StackPanel>
+
+                    <!-- Install & Restart -->
+                    <Button Content="Install &amp; Restart"
+                            Margin="12,0,0,0" Padding="10,3" FontSize="12"
+                            Background="White" Foreground="#E67E22" BorderThickness="0" Cursor="Hand"
+                            Command="{Binding InstallUpdateCommand}"
+                            Visibility="{Binding IsUpdateDownloaded, Converter={StaticResource BoolToVis}}"
+                            ToolTip="Apply update and restart EasyPDF" />
                 </StackPanel>
+
                 <Button HorizontalAlignment="Right" VerticalAlignment="Center"
                         Width="24" Height="24"
                         Content="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="11"
@@ -253,14 +346,40 @@
             </Grid>
         </Border>
 
-        <!-- ===== Search Panel (collapsible) ===== -->
+        <!-- ===== File Changed Banner ===== -->
         <Border Grid.Row="3"
+                Background="#2471A3"
+                Padding="12,6"
+                Visibility="{Binding FileChangedOnDisk, Converter={StaticResource BoolToVis}}">
+            <Grid>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="&#xE8A4;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                               Foreground="White" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <TextBlock Text="The file was modified outside EasyPDF."
+                               FontSize="12" Foreground="White" VerticalAlignment="Center" />
+                    <Button Content="Reload"
+                            Margin="12,0,0,0" Padding="10,3" FontSize="12"
+                            Background="White" Foreground="#2471A3" BorderThickness="0" Cursor="Hand"
+                            Command="{Binding ReloadDocumentCommand}"
+                            ToolTip="Reload document from disk" />
+                </StackPanel>
+                <Button HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Width="24" Height="24"
+                        Content="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="11"
+                        Background="Transparent" BorderThickness="0"
+                        Foreground="White" Cursor="Hand"
+                        Command="{Binding DismissFileChangedCommand}"
+                        ToolTip="Dismiss" />
+            </Grid>
+        </Border>
+
+        <!-- ===== Search Panel (collapsible) ===== -->
+        <Border Grid.Row="4"
                 Background="{DynamicResource SurfaceBrush}"
                 BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="0,0,0,1"
-                Visibility="{Binding IsSearchPanelOpen, Converter={StaticResource BoolToVis}}"
-                DataContext="{Binding Search}">
-            <Grid>
+                Visibility="{Binding IsSearchPanelOpen, Converter={StaticResource BoolToVis}}">
+            <Grid DataContext="{Binding Search}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
@@ -270,6 +389,7 @@
                 <Grid Grid.Row="0" Margin="8,4">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
@@ -283,30 +403,41 @@
                              VerticalContentAlignment="Center"
                              KeyDown="SearchBoxKeyDown" />
 
-                    <TextBlock Grid.Column="1" Margin="8,0" VerticalAlignment="Center"
+                    <ToggleButton Grid.Column="1"
+                                  IsChecked="{Binding CaseSensitive}"
+                                  Content="Aa"
+                                  Style="{DynamicResource SearchToggleButtonStyle}"
+                                  AutomationProperties.Name="Case sensitive"
+                                  ToolTip="Case sensitive"
+                                  Margin="4,0" />
+
+                    <TextBlock Grid.Column="2" Margin="8,0" VerticalAlignment="Center"
                                FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
                                Visibility="{Binding HasResults, Converter={StaticResource BoolToVis}}">
-                        <Run Text="{Binding CurrentResultIndex, Mode=OneWay, StringFormat='{}{0:D}'}" />
+                        <Run Text="{Binding CurrentResultDisplay, Mode=OneWay}" />
                         <Run Text="/" />
                         <Run Text="{Binding TotalResults, Mode=OneWay}" />
                     </TextBlock>
 
-                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <StackPanel Grid.Column="3" Orientation="Horizontal">
                         <Button Content="▲" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
                                 AutomationProperties.Name="Previous search result"
-                                Command="{Binding PreviousResultCommand}" ToolTip="Previous match" />
+                                Command="{Binding PreviousResultCommand}"
+                                h:Tip.Title="Previous match" h:Tip.Keys="Shift+F3" />
                         <Button Content="▼" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
                                 AutomationProperties.Name="Next search result"
-                                Command="{Binding NextResultCommand}" ToolTip="Next match" />
+                                Command="{Binding NextResultCommand}"
+                                h:Tip.Title="Next match" h:Tip.Keys="F3" />
                         <Button Content="Search" Style="{DynamicResource AccentButtonStyle}" Margin="4,0"
                                 Command="{Binding SearchCommand}" />
                     </StackPanel>
 
-                    <Button Grid.Column="3" Content="✕" Width="28" Height="28"
+                    <Button Grid.Column="4" Content="✕" Width="28" Height="28"
                             Style="{DynamicResource IconButtonStyle}"
                             AutomationProperties.Name="Close search"
-                            Command="{Binding ClearSearchCommand}"
-                            ToolTip="Close search" />
+                            Command="{Binding DataContext.ToggleSearchCommand,
+                                              RelativeSource={RelativeSource AncestorType=Window}}"
+                            h:Tip.Title="Close search" h:Tip.Keys="Esc" />
                 </Grid>
 
                 <!-- Progress bar: spans full width, visible only while searching -->
@@ -320,22 +451,26 @@
         </Border>
 
         <!-- ===== Main Content ===== -->
-        <Grid Grid.Row="4">
+        <Grid Grid.Row="5">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />  <!-- Sidebar -->
-                <ColumnDefinition Width="*" />     <!-- Viewer -->
+                <ColumnDefinition x:Name="SidebarColumn"   Width="260" MinWidth="160" />
+                <ColumnDefinition x:Name="SplitterColumn"  Width="4" />
+                <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
             <!-- Sidebar -->
             <Border Grid.Column="0"
-                    BorderBrush="{DynamicResource BorderBrush}"
-                    BorderThickness="0,0,1,0"
-                    Visibility="{Binding Sidebar.IsVisible, Converter={StaticResource BoolToVis}}">
+                    Visibility="{Binding IsSidebarVisible, Converter={StaticResource BoolToVis}}">
                 <views:SidebarView DataContext="{Binding Sidebar}" />
             </Border>
 
+            <!-- Resizable splitter — only visible when sidebar is shown -->
+            <GridSplitter Grid.Column="1"
+                          HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                          Visibility="{Binding IsSidebarVisible, Converter={StaticResource BoolToVis}}" />
+
             <!-- PDF Viewer or Welcome screen -->
-            <Grid Grid.Column="1">
+            <Grid Grid.Column="2">
                 <!-- Welcome / empty state — two-row Grid avoids ScrollViewer centering quirks -->
                 <Grid Background="{DynamicResource BackgroundBrush}"
                       Visibility="{Binding HasDocument, Converter={StaticResource InvBoolToVis}}">
@@ -367,14 +502,32 @@
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <TextBlock Grid.Row="0"
-                                   Text="Recent files" FontSize="13" FontWeight="SemiBold"
+                        <Grid Grid.Row="0" Margin="0,0,0,4"
+                              Width="420" HorizontalAlignment="Center"
+                              Visibility="{Binding HasRecentFiles, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Recent files" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <Button Content="Clear" FontSize="11"
+                                    HorizontalAlignment="Right" Margin="0,0,0,0"
+                                    Style="{DynamicResource ToolbarButtonStyle}"
+                                    Command="{Binding ClearRecentFilesCommand}"
+                                    ToolTip="Clear recent files" />
+                        </Grid>
+
+                        <!-- Empty state -->
+                        <TextBlock Grid.Row="1"
+                                   Text="No files opened yet"
+                                   FontSize="13"
                                    Foreground="{DynamicResource TextSecondaryBrush}"
-                                   HorizontalAlignment="Center" Margin="0,0,0,4" />
+                                   HorizontalAlignment="Center" VerticalAlignment="Top"
+                                   Margin="0,8,0,0"
+                                   Visibility="{Binding HasRecentFiles, Converter={StaticResource InvBoolToVis}}" />
 
                         <ScrollViewer Grid.Row="1"
                                       VerticalScrollBarVisibility="Auto"
-                                      HorizontalScrollBarVisibility="Disabled">
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      Visibility="{Binding HasRecentFiles, Converter={StaticResource BoolToVis}}">
                             <ItemsControl ItemsSource="{Binding RecentFiles}"
                                           HorizontalAlignment="Center" Width="420"
                                           Margin="0,0,0,24">
@@ -412,14 +565,48 @@
                 <Border Background="#AA000000"
                         Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <TextBlock Text="Opening…" Foreground="White" FontSize="18" />
+                        <Grid Width="48" Height="48" HorizontalAlignment="Center" Margin="0,0,0,14">
+                            <!-- Faint track circle -->
+                            <Ellipse Stroke="White" StrokeThickness="4" Opacity="0.2" />
+                            <!-- Spinning 270° arc -->
+                            <Path Stroke="White" StrokeThickness="4"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                  Width="48" Height="48" Stretch="None"
+                                  RenderTransformOrigin="0.5,0.5">
+                                <Path.Data>
+                                    <PathGeometry>
+                                        <PathFigure StartPoint="24,2">
+                                            <ArcSegment Point="2,24" Size="22,22"
+                                                        IsLargeArc="True"
+                                                        SweepDirection="Clockwise" />
+                                        </PathFigure>
+                                    </PathGeometry>
+                                </Path.Data>
+                                <Path.RenderTransform>
+                                    <RotateTransform />
+                                </Path.RenderTransform>
+                                <Path.Triggers>
+                                    <EventTrigger RoutedEvent="Loaded">
+                                        <BeginStoryboard>
+                                            <Storyboard RepeatBehavior="Forever">
+                                                <DoubleAnimation
+                                                    Storyboard.TargetProperty="RenderTransform.Angle"
+                                                    From="0" To="360" Duration="0:0:0.9" />
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </Path.Triggers>
+                            </Path>
+                        </Grid>
+                        <TextBlock Text="Opening…" Foreground="White" FontSize="14"
+                                   HorizontalAlignment="Center" />
                     </StackPanel>
                 </Border>
             </Grid>
         </Grid>
 
         <!-- ===== Status Bar ===== -->
-        <Border Grid.Row="5"
+        <Border Grid.Row="6"
                 Background="{DynamicResource ToolbarBrush}"
                 BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="0,1,0,0">

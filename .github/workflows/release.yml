@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - name: Install vpk
+        run: dotnet tool install -g vpk
+
+      - name: Extract version from tag
+        id: ver
+        run: echo "VERSION=$($env:GITHUB_REF_NAME.TrimStart('v'))" >> $env:GITHUB_OUTPUT
+
+      - name: Publish
+        run: dotnet publish src/EasyPDF.UI -c Release -r win-x64 --self-contained -o publish/
+
+      - name: Pack (Velopack)
+        run: vpk pack --packId EasyPDF --packVersion ${{ steps.ver.outputs.VERSION }} --packDir publish/ --outputDir releases/
+
+      - name: Create GitHub Release
+        run: gh release create ${{ github.ref_name }} releases/* --title "EasyPDF ${{ steps.ver.outputs.VERSION }}" --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

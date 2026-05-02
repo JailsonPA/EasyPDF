@@ -4,8 +4,7 @@
              xmlns:vm="clr-namespace:EasyPDF.Application.ViewModels;assembly=EasyPDF.Application"
              xmlns:conv="clr-namespace:EasyPDF.UI.Converters"
              xmlns:ctrl="clr-namespace:EasyPDF.UI.Controls"
-             Background="{DynamicResource SidebarBrush}"
-             Width="260">
+             Background="{DynamicResource SidebarBrush}">
 
     <UserControl.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
@@ -62,46 +61,90 @@
         <!-- Tab bar -->
         <Border Grid.Row="0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <StackPanel Orientation="Horizontal" Height="36">
-                <Button Content="Pages" Style="{DynamicResource ToolbarButtonStyle}"
-                        FontSize="12" Padding="12,0"
+                <Button Content="Pages"
                         Command="{Binding SetTabCommand}"
-                        CommandParameter="{x:Static vm:SidebarTab.Thumbnails}" />
-                <Button Content="Contents" Style="{DynamicResource ToolbarButtonStyle}"
-                        FontSize="12" Padding="12,0"
+                        CommandParameter="{x:Static vm:SidebarTab.Thumbnails}">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource SidebarTabButtonStyle}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ActiveTab}" Value="{x:Static vm:SidebarTab.Thumbnails}">
+                                    <Setter Property="Tag" Value="Active" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <Button Content="Contents"
                         Command="{Binding SetTabCommand}"
-                        CommandParameter="{x:Static vm:SidebarTab.TableOfContents}" />
-                <Button Content="Bookmarks" Style="{DynamicResource ToolbarButtonStyle}"
-                        FontSize="12" Padding="12,0"
+                        CommandParameter="{x:Static vm:SidebarTab.TableOfContents}">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource SidebarTabButtonStyle}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ActiveTab}" Value="{x:Static vm:SidebarTab.TableOfContents}">
+                                    <Setter Property="Tag" Value="Active" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <Button Content="Bookmarks"
                         Command="{Binding SetTabCommand}"
-                        CommandParameter="{x:Static vm:SidebarTab.Bookmarks}" />
+                        CommandParameter="{x:Static vm:SidebarTab.Bookmarks}">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource SidebarTabButtonStyle}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ActiveTab}" Value="{x:Static vm:SidebarTab.Bookmarks}">
+                                    <Setter Property="Tag" Value="Active" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
             </StackPanel>
         </Border>
 
-        <!-- Tab content -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
-                      CanContentScroll="True">
-            <!-- Thumbnails -->
-            <ItemsControl ItemsSource="{Binding Thumbnails}"
-                          ItemTemplate="{StaticResource ThumbnailTemplate}"
-                          VirtualizingPanel.IsVirtualizing="True"
-                          VirtualizingPanel.VirtualizationMode="Recycling">
-                <ItemsControl.Style>
-                    <Style TargetType="ItemsControl">
-                        <Setter Property="Visibility" Value="Collapsed" />
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding ActiveTab}" Value="{x:Static vm:SidebarTab.Thumbnails}">
-                                <Setter Property="Visibility" Value="Visible" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </ItemsControl.Style>
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <VirtualizingStackPanel />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-            </ItemsControl>
-        </ScrollViewer>
+        <!-- Tab content: Thumbnails -->
+        <ListBox x:Name="ThumbnailList"
+                 Grid.Row="1"
+                 ItemsSource="{Binding Thumbnails}"
+                 ItemTemplate="{StaticResource ThumbnailTemplate}"
+                 VirtualizingPanel.IsVirtualizing="True"
+                 VirtualizingPanel.VirtualizationMode="Recycling"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 ScrollViewer.CanContentScroll="True"
+                 Background="Transparent" BorderBrush="Transparent"
+                 HorizontalContentAlignment="Stretch">
+            <ListBox.Style>
+                <Style TargetType="ListBox">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding ActiveTab}" Value="{x:Static vm:SidebarTab.Thumbnails}">
+                            <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </ListBox.Style>
+            <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <VirtualizingStackPanel />
+                </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <!-- Strip ListBoxItem chrome — thumbnail selection is shown via border color in ThumbnailTemplate. -->
+            <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="Focusable" Value="False" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ListBoxItem">
+                                <ContentPresenter />
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ListBox.ItemContainerStyle>
+        </ListBox>
 
         <!-- TOC TreeView -->
         <TreeView Grid.Row="1"
@@ -121,6 +164,65 @@
                 </Style>
             </TreeView.Style>
         </TreeView>
+
+        <!-- TOC empty state -->
+        <StackPanel Grid.Row="1"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Margin="16">
+            <StackPanel.Style>
+                <Style TargetType="StackPanel">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding ActiveTab}" Value="{x:Static vm:SidebarTab.TableOfContents}" />
+                                <Condition Binding="{Binding HasTocItems}" Value="False" />
+                            </MultiDataTrigger.Conditions>
+                            <Setter Property="Visibility" Value="Visible" />
+                        </MultiDataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </StackPanel.Style>
+            <TextBlock Text="&#xE8A9;" FontFamily="Segoe MDL2 Assets" FontSize="28"
+                       HorizontalAlignment="Center" Margin="0,0,0,10"
+                       Foreground="{DynamicResource TextDisabledBrush}" />
+            <TextBlock Text="No table of contents"
+                       HorizontalAlignment="Center" FontSize="12" FontWeight="SemiBold"
+                       TextAlignment="Center"
+                       Foreground="{DynamicResource TextSecondaryBrush}" />
+            <TextBlock Text="This PDF has no embedded bookmarks or outline."
+                       HorizontalAlignment="Center" FontSize="11"
+                       TextWrapping="Wrap" TextAlignment="Center" Margin="0,4,0,0"
+                       Foreground="{DynamicResource TextDisabledBrush}" />
+        </StackPanel>
+
+        <!-- Bookmarks empty state -->
+        <StackPanel Grid.Row="1"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Margin="16">
+            <StackPanel.Style>
+                <Style TargetType="StackPanel">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding ActiveTab}" Value="{x:Static vm:SidebarTab.Bookmarks}" />
+                                <Condition Binding="{Binding HasBookmarks}" Value="False" />
+                            </MultiDataTrigger.Conditions>
+                            <Setter Property="Visibility" Value="Visible" />
+                        </MultiDataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </StackPanel.Style>
+            <TextBlock Text="No bookmarks yet"
+                       HorizontalAlignment="Center"
+                       FontSize="12" TextAlignment="Center"
+                       Foreground="{DynamicResource TextSecondaryBrush}" />
+            <TextBlock Text="Press Ctrl+B to add a bookmark"
+                       HorizontalAlignment="Center"
+                       FontSize="11" TextAlignment="Center" Margin="0,4,0,0"
+                       Foreground="{DynamicResource TextSecondaryBrush}" />
+        </StackPanel>
 
         <!-- Bookmarks ListBox -->
         <ListBox Grid.Row="1"

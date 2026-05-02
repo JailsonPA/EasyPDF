@@ -9,7 +9,10 @@
         <conv:NullToVisibilityConverter x:Key="NullToVis" />
     </UserControl.Resources>
 
-    <Grid Width="140" Height="180">
+    <!-- White background ensures the sidebar colour never bleeds into transparent
+         regions around the thumbnail (e.g. the ~6 px letter-box strips on portrait
+         A4 pages that don't fill the full 140 × 180 grid at Stretch=Uniform). -->
+    <Grid Width="140" Height="180" Background="White">
         <!-- Rendered thumbnail -->
         <Image Source="{Binding RenderedPage, Converter={StaticResource PageConverter}}"
                Stretch="Uniform"

@@ -28,7 +28,11 @@ public sealed partial class SidebarViewModel : ObservableObject, IDisposable
     public BulkObservableCollection<TocItemViewModel> TocItems { get; } = new();
     public ObservableCollection<BookmarkItemViewModel> Bookmarks { get; } = [];
 
-    public event EventHandler<int>? PageNavigationRequested;
+    public bool HasTocItems  => TocItems.Count  > 0;
+    public bool HasBookmarks => Bookmarks.Count > 0;
+
+    public event EventHandler<int>?                    PageNavigationRequested;
+    public event EventHandler<ThumbnailItemViewModel>? ScrollIntoViewRequested;
 
     public SidebarViewModel(
         IPdfRenderService renderService,
@@ -38,6 +42,9 @@ public sealed partial class SidebarViewModel : ObservableObject, IDisposable
         _renderService = renderService;
         _bookmarkRepo = bookmarkRepo;
         _logger = logger;
+
+        TocItems.CollectionChanged  += (_, _) => OnPropertyChanged(nameof(HasTocItems));
+        Bookmarks.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasBookmarks));
     }
 
     public async Task LoadDocumentAsync(PdfDocument document, CancellationToken ct = default)
@@ -134,7 +141,10 @@ public sealed partial class SidebarViewModel : ObservableObject, IDisposable
             prev.IsSelected = false;
 
         if (_thumbIndex.TryGetValue(pageIndex, out var next))
+        {
             next.IsSelected = true;
+            ScrollIntoViewRequested?.Invoke(this, next);
+        }
 
         _selectedThumbIndex = pageIndex;
     }

@@ -1,9 +1,12 @@
 using EasyPDF.Application.ViewModels;
+using EasyPDF.UI.Services;
 using EasyPDF.UI.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MuPDFCore;
 using System.Diagnostics;
+using System.IO;
+using System.IO.Pipes;
 using System.Windows;
 
 // Disambiguate: EasyPDF.Application is our project namespace, System.Windows.Application is the WPF class
@@ -13,13 +16,14 @@ namespace EasyPDF.UI;
 
 public partial class App : WpfApplication
 {
-    // Unique GUID in the name prevents accidental collisions with other apps.
     private const string MutexName = @"Global\EasyPDF_4F8E2A1D-3B7C-6509-A2D1-8E0F4C3B5A7E";
+    internal const string PipeName = "EasyPDF_IPC_4F8E2A1D";
 
     private Mutex? _instanceMutex;
     private bool _mutexOwned;
     private IServiceProvider? _services;
     private ILogger<App>? _appLogger;
+    private CancellationTokenSource? _pipeCts;
 
     public App()
     {
@@ -36,6 +40,9 @@ public partial class App : WpfApplication
         _instanceMutex = new Mutex(true, MutexName, out _mutexOwned);
         if (!_mutexOwned)
         {
+            // Forward the file path to the running instance before exiting.
+            if (e.Args.Length > 0)
+                TrySendFileToPipe(e.Args[0]);
             BringExistingInstanceToFront();
             Shutdown();
             return;
@@ -76,6 +83,14 @@ public partial class App : WpfApplication
             var vm = _services.GetRequiredService<MainViewModel>();
             _ = vm.DropFileAsync(e.Args[0]);
         }
+
+        // Register in Windows shell ("Open with EasyPDF") — skips if already registered
+        // for the current exe path so subsequent launches incur only one registry read.
+        WindowsFileAssociationService.EnsureRegistered();
+
+        // Start IPC pipe so subsequent instances can forward their file paths here.
+        _pipeCts = new CancellationTokenSource();
+        StartPipeServer(_services.GetRequiredService<MainViewModel>(), _pipeCts.Token);
     }
 
     private static async Task SetupMuPdfRedirectAsync(ILogger logger)
@@ -102,8 +117,55 @@ public partial class App : WpfApplication
         }
     }
 
+    // ─── Named pipe IPC ────────────────────────────────────────────────────────
+
+    private void StartPipeServer(MainViewModel vm, CancellationToken ct)
+    {
+        _ = Task.Run(async () =>
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    using var server = new NamedPipeServerStream(
+                        PipeName, PipeDirection.In, 1,
+                        PipeTransmissionMode.Message, PipeOptions.Asynchronous);
+                    await server.WaitForConnectionAsync(ct).ConfigureAwait(false);
+
+                    using var reader = new StreamReader(server);
+                    string? path = await reader.ReadLineAsync(ct).ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(path))
+                    {
+                        string filePath = path!;
+                        _ = Dispatcher.BeginInvoke(new Action(() => { _ = vm.DropFileAsync(filePath); }));
+                    }
+                }
+                catch (OperationCanceledException) { break; }
+                catch { /* ignore pipe errors — just wait for next connection */ }
+            }
+        }, ct);
+    }
+
+    private static void TrySendFileToPipe(string filePath)
+    {
+        try
+        {
+            using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out);
+            client.Connect(800);
+            using var writer = new StreamWriter(client) { AutoFlush = true };
+            writer.WriteLine(filePath);
+        }
+        catch { /* existing instance may not have the pipe up yet — that's fine */ }
+    }
+
+    // ─── Lifecycle ─────────────────────────────────────────────────────────────
+
     protected override async void OnExit(ExitEventArgs e)
     {
+        _pipeCts?.Cancel();
+        _pipeCts?.Dispose();
+        _pipeCts = null;
+
         // Release the single-instance mutex so the next launch can proceed.
         try
         {

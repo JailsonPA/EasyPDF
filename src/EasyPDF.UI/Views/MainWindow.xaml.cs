@@ -1,6 +1,8 @@
 using EasyPDF.Application.ViewModels;
 using EasyPDF.UI.Services;
+using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 
@@ -10,12 +12,38 @@ public partial class MainWindow : Window
 {
     private readonly MainViewModel _vm;
     private HwndSource? _hwndSource;
+    private GridLength _savedSidebarWidth = new GridLength(260);
 
     public MainWindow(MainViewModel vm)
     {
         InitializeComponent();
         _vm = vm;
         DataContext = vm;
+        vm.PropertyChanged += OnMainVmPropertyChanged;
+    }
+
+    private void OnMainVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.IsSidebarVisible))
+            UpdateSidebarLayout();
+    }
+
+    private void UpdateSidebarLayout()
+    {
+        if (_vm.IsSidebarVisible)
+        {
+            SidebarColumn.MinWidth = 160;
+            SidebarColumn.Width    = _savedSidebarWidth;
+            SplitterColumn.Width   = new GridLength(4);
+        }
+        else
+        {
+            if (SidebarColumn.ActualWidth > 0)
+                _savedSidebarWidth = new GridLength(SidebarColumn.ActualWidth);
+            SidebarColumn.MinWidth = 0;
+            SidebarColumn.Width    = new GridLength(0);
+            SplitterColumn.Width   = new GridLength(0);
+        }
     }
 
     protected override async void OnSourceInitialized(EventArgs e)
@@ -24,6 +52,7 @@ public partial class MainWindow : Window
         _hwndSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
         _hwndSource?.AddHook(WndProc);
         ApplySavedPlacement();
+        UpdateSidebarLayout();
         await _vm.InitializeAsync();
     }
 
@@ -127,6 +156,21 @@ public partial class MainWindow : Window
                 return new IntPtr(NativeMethods.HTMAXBUTTON);
             }
         }
+        else if (msg == NativeMethods.WM_NCLBUTTONDOWN && wParam.ToInt32() == NativeMethods.HTMAXBUTTON)
+        {
+            // Block DefWindowProc from posting WM_SYSCOMMAND SC_MAXIMIZE to the
+            // message queue. If allowed through, it would toggle the window BEFORE
+            // WM_NCLBUTTONUP fires, and our handler below would toggle it back —
+            // net result: no visible change. Suppress here; act on the Up event.
+            handled = true;
+        }
+        else if (msg == NativeMethods.WM_NCLBUTTONUP && wParam.ToInt32() == NativeMethods.HTMAXBUTTON)
+        {
+            // HTMAXBUTTON promotes this area to non-client space, so Windows never
+            // delivers WM_LBUTTONUP to the WPF button. Toggle here instead.
+            ToggleMaximize();
+            handled = true;
+        }
         return IntPtr.Zero;
     }
 
@@ -205,8 +249,11 @@ public partial class MainWindow : Window
                 _vm.OpenFileCommand.Execute(null);
                 e.Handled = true;
                 break;
-            case Key.W when Keyboard.Modifiers == ModifierKeys.Control && _vm.HasDocument:
-                _vm.CloseDocumentCommand.Execute(null);
+            case Key.W when Keyboard.Modifiers == ModifierKeys.Control:
+                if (_vm.HasDocument)
+                    _vm.CloseDocumentCommand.Execute(null);
+                else
+                    Close();
                 e.Handled = true;
                 break;
 
@@ -257,6 +304,18 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
 
+            // ── File properties ───────────────────────────────────────────
+            case Key.Enter when Keyboard.Modifiers == ModifierKeys.Alt && _vm.HasDocument:
+                PropertiesClick(this, new RoutedEventArgs());
+                e.Handled = true;
+                break;
+
+            // ── Keyboard shortcuts help ───────────────────────────────────
+            case Key.F1:
+                ShortcutsClick(this, new RoutedEventArgs());
+                e.Handled = true;
+                break;
+
             // ── Copy selected text ────────────────────────────────────────
             case Key.C when Keyboard.Modifiers == ModifierKeys.Control:
                 if (!string.IsNullOrEmpty(_vm.Viewer.SelectedText))
@@ -298,17 +357,47 @@ public partial class MainWindow : Window
     private void ZoomInputKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter) return;
-        if (sender is System.Windows.Controls.TextBox tb)
+        string? text = sender switch
         {
-            string raw = tb.Text.TrimEnd('%').Trim();
+            System.Windows.Controls.ComboBox cb => cb.Text,
+            System.Windows.Controls.TextBox  tb => tb.Text,
+            _ => null
+        };
+        if (text is not null)
+        {
+            string raw = text.TrimEnd('%').Trim();
             if (double.TryParse(raw, out double pct))
                 _vm.Viewer.ZoomToCommand.Execute(pct);
         }
         e.Handled = true;
     }
 
+    private void ZoomPresetSelected(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.ComboBox cb) return;
+        if (cb.SelectedItem is not System.Windows.Controls.ComboBoxItem item) return;
+
+        string raw = item.Content?.ToString()?.TrimEnd('%').Trim() ?? "";
+        if (double.TryParse(raw, out double pct))
+            _vm.Viewer.ZoomToCommand.Execute(pct);
+
+        // Defer-clear so the same preset can be re-selected and the dropdown
+        // doesn't show a stale highlight when scale changes externally.
+        Dispatcher.InvokeAsync(() => cb.SelectedItem = null,
+            System.Windows.Threading.DispatcherPriority.Background);
+    }
+
+    private void ShortcutsClick(object sender, RoutedEventArgs e) =>
+        new ShortcutsWindow { Owner = this }.ShowDialog();
+
     private void AboutClick(object sender, RoutedEventArgs e) =>
         new AboutWindow { Owner = this }.ShowDialog();
+
+    private void PropertiesClick(object sender, RoutedEventArgs e)
+    {
+        if (_vm.CurrentDocument is { } doc)
+            new PropertiesWindow(doc) { Owner = this }.ShowDialog();
+    }
 
     private void SearchBoxKeyDown(object sender, KeyEventArgs e)
     {

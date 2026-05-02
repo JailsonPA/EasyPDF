@@ -7,5 +7,8 @@ public sealed record PdfDocument(
     long FileSizeBytes,
     DateTime OpenedAt,
     IReadOnlyList<PdfPageInfo> Pages,
-    IReadOnlyList<TocEntry> TableOfContents
+    IReadOnlyList<TocEntry> TableOfContents,
+    string PdfVersion   = "Unknown",
+    bool IsEncrypted    = false,
+    bool IsRestricted   = false
 );

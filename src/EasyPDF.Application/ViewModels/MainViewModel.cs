@@ -20,13 +20,19 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
     private readonly IDialogService _dialogService;
     private readonly IThemeService _themeService;
     private readonly IPrintService _printService;
+    private readonly IExportService _exportService;
     private readonly IUpdateService _updateService;
     private readonly AppSettings _settings;
     private readonly ILogger<MainViewModel> _logger;
+    private readonly SynchronizationContext? _uiContext;
+
+    private FileSystemWatcher? _watcher;
+    private CancellationTokenSource? _watchDebounce;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Title))]
     [NotifyPropertyChangedFor(nameof(HasDocument))]
+    [NotifyPropertyChangedFor(nameof(IsSidebarVisible))]
     private PdfDocument? _currentDocument;
 
     [ObservableProperty]
@@ -42,22 +48,41 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
     private bool _isSearchPanelOpen;
 
     [ObservableProperty]
+    private bool _fileChangedOnDisk;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(UpdateAvailable))]
+    [NotifyPropertyChangedFor(nameof(CanDownloadUpdate))]
     private UpdateInfo? _pendingUpdate;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanDownloadUpdate))]
+    private bool _isDownloadingUpdate;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanDownloadUpdate))]
+    private bool _isUpdateDownloaded;
+
+    [ObservableProperty]
+    private int _updateDownloadProgress;
+
     public bool UpdateAvailable => PendingUpdate is not null;
+    public bool UpdateCanInstall => _updateService.CanInstall;
+    public bool CanDownloadUpdate => UpdateAvailable && UpdateCanInstall && !IsDownloadingUpdate && !IsUpdateDownloaded;
 
     public string Title => CurrentDocument is null
         ? "EasyPDF"
         : $"{CurrentDocument.FileName} — EasyPDF";
 
     public bool HasDocument => CurrentDocument is not null;
+    public bool IsSidebarVisible => HasDocument && Sidebar.IsVisible;
 
     public PdfViewerViewModel Viewer { get; }
     public SidebarViewModel Sidebar { get; }
     public SearchViewModel Search { get; }
 
     public ObservableCollection<RecentFile> RecentFiles { get; } = [];
+    public bool HasRecentFiles => RecentFiles.Count > 0;
 
     public MainViewModel(
         IPdfDocumentService docService,
@@ -65,6 +90,7 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
         IDialogService dialogService,
         IThemeService themeService,
         IPrintService printService,
+        IExportService exportService,
         IUpdateService updateService,
         AppSettings settings,
         PdfViewerViewModel viewer,
@@ -77,9 +103,11 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
         _dialogService = dialogService;
         _themeService  = themeService;
         _printService  = printService;
+        _exportService = exportService;
         _updateService = updateService;
         _settings      = settings;
         _logger        = logger;
+        _uiContext     = SynchronizationContext.Current;
 
         Viewer = viewer;
         Sidebar = sidebar;
@@ -87,9 +115,24 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
 
         _currentTheme = themeService.CurrentTheme;
         themeService.ThemeChanged += (_, t) => CurrentTheme = t;
+        RecentFiles.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasRecentFiles));
+
+        // Keep IsSidebarVisible in sync when the user toggles sidebar visibility.
+        Sidebar.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(SidebarViewModel.IsVisible))
+                OnPropertyChanged(nameof(IsSidebarVisible));
+        };
 
         // Wire sidebar → viewer navigation
         Sidebar.PageNavigationRequested += (_, page) => Viewer.GoToPageCommand.Execute(page);
+
+        // Wire viewer → sidebar: keep thumbnail selection in sync with the current page.
+        Viewer.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(PdfViewerViewModel.CurrentPageIndex))
+                Sidebar.SetSelectedPage(Viewer.CurrentPageIndex);
+        };
 
         // Wire search → viewer: navigate + update highlight overlay
         Search.ResultNavigateRequested += (_, result) =>
@@ -106,8 +149,7 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
     {
         _themeService.LoadSaved();
 
-        var recents = await _recentRepo.GetAllAsync();
-        foreach (var r in recents)
+        foreach (var r in await LoadAndPurgeMissingRecentFilesAsync())
             RecentFiles.Add(r);
 
         // Fire-and-forget: check for a newer release in the background.
@@ -125,8 +167,50 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
         catch { /* never surface update-check errors */ }
     }
 
+    private CancellationTokenSource? _downloadCts;
+
     [RelayCommand]
-    private void DismissUpdate() => PendingUpdate = null;
+    private void DismissUpdate()
+    {
+        _downloadCts?.Cancel();
+        PendingUpdate = null;
+        IsDownloadingUpdate = false;
+        IsUpdateDownloaded = false;
+        UpdateDownloadProgress = 0;
+    }
+
+    [RelayCommand]
+    private async Task DownloadUpdateAsync()
+    {
+        if (PendingUpdate is null || IsDownloadingUpdate) return;
+        _downloadCts = new CancellationTokenSource();
+        IsDownloadingUpdate = true;
+        UpdateDownloadProgress = 0;
+        try
+        {
+            var progress = new Progress<int>(p => UpdateDownloadProgress = p);
+            await _updateService.DownloadUpdateAsync(PendingUpdate, progress, _downloadCts.Token);
+            IsUpdateDownloaded = true;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Update download failed");
+        }
+        finally
+        {
+            IsDownloadingUpdate = false;
+            _downloadCts?.Dispose();
+            _downloadCts = null;
+        }
+    }
+
+    [RelayCommand]
+    private void InstallUpdate()
+    {
+        if (!IsUpdateDownloaded) return;
+        _updateService.ApplyUpdateAndRestart();
+    }
 
     [RelayCommand]
     private void OpenReleasePage()
@@ -142,6 +226,13 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
         {
             _logger.LogWarning(ex, "Failed to open release URL {Url}", PendingUpdate.ReleaseUrl);
         }
+    }
+
+    [RelayCommand]
+    private async Task ClearRecentFilesAsync()
+    {
+        await _recentRepo.ClearAsync();
+        RecentFiles.Clear();
     }
 
     [RelayCommand]
@@ -172,6 +263,8 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
     [RelayCommand]
     private async Task CloseDocumentAsync()
     {
+        StopWatching();
+        FileChangedOnDisk = false;
         await SaveLastPageAsync();
 
         try
@@ -186,6 +279,7 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
         }
 
         CurrentDocument = null;
+        IsSearchPanelOpen = false;
         Viewer.Clear();
         Sidebar.Clear();
         Search.ClearSearchCommand.Execute(null);
@@ -223,7 +317,29 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
     }
 
     [RelayCommand]
-    private void ToggleSearch() => IsSearchPanelOpen = !IsSearchPanelOpen;
+    private void ToggleSearch()
+    {
+        IsSearchPanelOpen = !IsSearchPanelOpen;
+        if (!IsSearchPanelOpen)
+            Search.ClearSearchCommand.Execute(null);
+    }
+
+    [RelayCommand]
+    private void OpenInExplorer()
+    {
+        if (CurrentDocument is null) return;
+        try
+        {
+            // /select highlights the file in Explorer instead of just opening the folder.
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                "explorer.exe", $"/select,\"{CurrentDocument.FilePath}\"")
+                { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to open Explorer for {Path}", CurrentDocument.FilePath);
+        }
+    }
 
     [RelayCommand]
     private async Task PrintAsync()
@@ -231,6 +347,34 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
         if (CurrentDocument is null) return;
         await _printService.PrintAsync(CurrentDocument.FileName, CurrentDocument.Pages);
         SetStatus("Print job sent.");
+    }
+
+    [RelayCommand]
+    private async Task ExportCurrentPageAsync()
+    {
+        if (CurrentDocument is null) return;
+
+        string suggested = $"{Path.GetFileNameWithoutExtension(CurrentDocument.FileName)}_page{Viewer.CurrentPageIndex + 1}";
+        string? path = await _dialogService.SaveImageFileAsync(suggested);
+        if (path is null) return;
+
+        IsLoading = true;
+        SetStatus("Exporting…");
+        try
+        {
+            await _exportService.ExportPageAsync(Viewer.CurrentPageIndex, path, dpi: 150);
+            SetStatus($"Page {Viewer.CurrentPageIndex + 1} exported.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Export failed for page {Page}", Viewer.CurrentPageIndex);
+            await _dialogService.ShowErrorAsync("Export Failed", ex.Message);
+            SetStatus("Export failed.");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
     }
 
     public async Task DropFileAsync(string filePath)
@@ -241,6 +385,75 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
             return;
         }
         await LoadDocumentAsync(filePath);
+    }
+
+    [RelayCommand]
+    private async Task ReloadDocumentAsync()
+    {
+        if (CurrentDocument is null) return;
+        string path = CurrentDocument.FilePath;
+        FileChangedOnDisk = false;
+        await CloseDocumentAsync();
+        await LoadDocumentAsync(path);
+    }
+
+    [RelayCommand]
+    private void DismissFileChanged() => FileChangedOnDisk = false;
+
+    private void StartWatching(string filePath)
+    {
+        StopWatching();
+        string? dir = Path.GetDirectoryName(filePath);
+        if (dir is null || !Directory.Exists(dir)) return;
+
+        try
+        {
+            _watcher = new FileSystemWatcher(dir, Path.GetFileName(filePath))
+            {
+                NotifyFilter        = NotifyFilters.LastWrite | NotifyFilters.Size,
+                EnableRaisingEvents = true
+            };
+            _watcher.Changed += OnWatchedFileEvent;
+            _watcher.Created += OnWatchedFileEvent;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "FileSystemWatcher could not be started for {Path}", filePath);
+        }
+    }
+
+    private void StopWatching()
+    {
+        if (_watcher is not null)
+        {
+            _watcher.EnableRaisingEvents = false;
+            _watcher.Changed -= OnWatchedFileEvent;
+            _watcher.Created -= OnWatchedFileEvent;
+            _watcher.Dispose();
+            _watcher = null;
+        }
+
+        _watchDebounce?.Cancel();
+        _watchDebounce?.Dispose();
+        _watchDebounce = null;
+    }
+
+    private void OnWatchedFileEvent(object sender, FileSystemEventArgs e)
+    {
+        // Debounce: many editors write a file in multiple bursts.
+        _watchDebounce?.Cancel();
+        _watchDebounce?.Dispose();
+        var cts = new CancellationTokenSource();
+        _watchDebounce = cts;
+
+        _ = Task.Delay(600, cts.Token).ContinueWith(t =>
+        {
+            if (!t.IsCompletedSuccessfully) return;
+            if (_uiContext is not null)
+                _uiContext.Post(_ => FileChangedOnDisk = true, null);
+            else
+                FileChangedOnDisk = true;
+        }, TaskScheduler.Default);
     }
 
     private async Task LoadDocumentAsync(string filePath)
@@ -266,6 +479,8 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
             if (!proceed) return;
         }
 
+        StopWatching();
+        FileChangedOnDisk = false;
         IsLoading = true;
         SetStatus("Opening…");
 
@@ -284,12 +499,18 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
             if (lastPageIndex > 0 && lastPageIndex < doc.PageCount)
                 Viewer.GoToPageCommand.Execute(lastPageIndex);
 
+            // Sync sidebar selection after thumb index is populated.
+            // Viewer.LoadDocument fires CurrentPageIndex before LoadDocumentAsync
+            // fills _thumbIndex, so SetSelectedPage above found nothing.
+            Sidebar.SetSelectedPage(Viewer.CurrentPageIndex);
+
             // Preserve lastPageIndex so it isn't reset to 0 on every open.
             await _recentRepo.AddOrUpdateAsync(new RecentFile(
                 doc.FilePath, doc.FileName, doc.PageCount,
                 doc.FileSizeBytes, DateTime.UtcNow, lastPageIndex));
 
             await RefreshRecentFilesAsync();
+            StartWatching(doc.FilePath);
             SetStatus($"Opened {doc.FileName}  ·  {doc.PageCount} pages");
         }
         catch (Exception ex)
@@ -366,13 +587,31 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
         try
         {
             RecentFiles.Clear();
-            foreach (var r in await _recentRepo.GetAllAsync())
+            foreach (var r in await LoadAndPurgeMissingRecentFilesAsync())
                 RecentFiles.Add(r);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to refresh recent files list");
         }
+    }
+
+    /// <summary>
+    /// Returns only recent files that still exist on disk, silently removing the rest
+    /// from the repository so they never reappear.
+    /// </summary>
+    private async Task<IReadOnlyList<RecentFile>> LoadAndPurgeMissingRecentFilesAsync()
+    {
+        var all = await _recentRepo.GetAllAsync();
+        var missing = all.Where(r => !File.Exists(r.FilePath)).ToList();
+
+        foreach (var m in missing)
+        {
+            _logger.LogDebug("Removing missing recent file: {Path}", m.FilePath);
+            await _recentRepo.RemoveAsync(m.FilePath);
+        }
+
+        return all.Where(r => File.Exists(r.FilePath)).ToList();
     }
 
     private CancellationTokenSource? _statusCts;

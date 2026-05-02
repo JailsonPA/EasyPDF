@@ -11,8 +11,8 @@ public partial class AboutWindow : Window
         InitializeComponent();
 
         var ver = Assembly.GetExecutingAssembly().GetName().Version!;
-        VersionText.Text    = $"Versão {ver.Major}.{ver.Minor}.{ver.Build}";
-        CopyrightText.Text  = $"© {DateTime.Now.Year} Jailson Prazeres";
+        VersionText.Text    = $"Version {ver.Major}.{ver.Minor}.{ver.Build}";
+        CopyrightText.Text  = $"© {DateTime.Now.Year} jailsonprazeres.com";
     }
 
     private void OnTitleBarMouseDown(object sender, MouseButtonEventArgs e)

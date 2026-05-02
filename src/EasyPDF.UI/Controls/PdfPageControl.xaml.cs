@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace EasyPDF.UI.Controls;
 
@@ -159,6 +160,77 @@ public partial class PdfPageControl : UserControl
                 catch { }
                 break;
         }
+    }
+
+    // ─── Context menu (right-click) ────────────────────────────────────────────
+
+    protected override void OnMouseRightButtonDown(MouseButtonEventArgs e)
+    {
+        base.OnMouseRightButtonDown(e);
+        if (ViewerVm is null || DataContext is not PageViewModel page) return;
+
+        var pos  = e.GetPosition(PageImage);
+        var link = HitTestLink(page, pos);
+        bool hasText = !string.IsNullOrEmpty(ViewerVm.SelectedText);
+
+        var menu = new ContextMenu();
+
+        // Copy text — always visible; disabled when nothing is selected.
+        var copyItem = new MenuItem
+        {
+            Header = "Copy text",
+            InputGestureText = "Ctrl+C",
+            IsEnabled = hasText
+        };
+        copyItem.Click += (_, _) =>
+        {
+            if (!string.IsNullOrEmpty(ViewerVm.SelectedText))
+                System.Windows.Clipboard.SetText(ViewerVm.SelectedText);
+        };
+        menu.Items.Add(copyItem);
+
+        // Copy page as image — always visible; renders at 150 DPI into the clipboard.
+        var copyImageItem = new MenuItem { Header = "Copy page as image" };
+        copyImageItem.Click += async (_, _) =>
+        {
+            var rendered = await ViewerVm.RenderPageForClipboardAsync(page.PageIndex);
+            if (rendered is null) return;
+            const double dpi = 150.0;
+            var bitmap = BitmapSource.Create(
+                rendered.Width, rendered.Height, dpi, dpi,
+                PixelFormats.Bgra32, null, rendered.PixelData, rendered.Stride);
+            bitmap.Freeze();
+            Clipboard.SetImage(bitmap);
+        };
+        menu.Items.Add(copyImageItem);
+
+        // Link actions — only when the cursor is over a link.
+        if (link.HasValue)
+        {
+            menu.Items.Add(new Separator());
+            switch (link.Value.Destination)
+            {
+                case PdfLinkDestination.External extDest:
+                    var openItem = new MenuItem { Header = "Open link" };
+                    openItem.Click += (_, _) => ActivateLink(link.Value);
+                    menu.Items.Add(openItem);
+
+                    var copyLinkItem = new MenuItem { Header = "Copy link address" };
+                    copyLinkItem.Click += (_, _) => System.Windows.Clipboard.SetText(extDest.Uri);
+                    menu.Items.Add(copyLinkItem);
+                    break;
+
+                case PdfLinkDestination.Internal intDest:
+                    var goToItem = new MenuItem { Header = $"Go to page {intDest.PageIndex + 1}" };
+                    goToItem.Click += (_, _) => ActivateLink(link.Value);
+                    menu.Items.Add(goToItem);
+                    break;
+            }
+        }
+
+        menu.PlacementTarget = this;
+        menu.IsOpen = true;
+        e.Handled = true;
     }
 
     // ─── Text selection ────────────────────────────────────────────────────────
