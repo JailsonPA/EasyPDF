@@ -5,12 +5,8 @@ using System.Text.Json;
 
 namespace EasyPDF.UI.Services;
 
-/// <summary>
 /// Checks the GitHub Releases API and returns an <see cref="UpdateInfo"/> if
-/// a version newer than the running assembly is available.
-/// All errors (network, parse, rate-limit) are silently swallowed so a failed
-/// check never surfaces to the user.
-/// </summary>
+
 internal sealed class GitHubUpdateService : IUpdateService
 {
     private static readonly HttpClient _http = CreateClient();

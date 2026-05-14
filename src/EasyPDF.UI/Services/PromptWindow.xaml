@@ -16,7 +16,6 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Title bar -->
         <Grid Grid.Row="0" Background="{DynamicResource WindowChromeBrush}"
               MouseLeftButtonDown="OnTitleBarMouseDown">
             <TextBlock x:Name="TitleText"
@@ -28,7 +27,6 @@
                     Click="Cancel_Click" />
         </Grid>
 
-        <!-- Content -->
         <Grid Grid.Row="1" Margin="20,16,20,16">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />

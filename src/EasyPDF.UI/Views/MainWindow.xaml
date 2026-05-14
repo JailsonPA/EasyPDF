@@ -19,6 +19,7 @@
 
     <Window.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+        <conv:EnumEqualityConverter x:Key="EnumEqConv" />
         <conv:BoolToVisibilityConverter x:Key="InvBoolToVis"
                                         TrueValue="Collapsed" FalseValue="Visible" />
         <conv:InverseBoolConverter x:Key="InvBool" />
@@ -26,7 +27,83 @@
         <conv:NullToVisibilityConverter x:Key="NullToVisInv" Invert="True" />
         <conv:ZoomToPercentConverter x:Key="ZoomConv" />
         <conv:OneBasedIndexConverter x:Key="PageConv" />
+
+        <!-- Tab activate button: slim, shows accent bottom-border when active -->
+        <Style x:Key="TabButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0,0,0,2" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+                            </Trigger>
+                            <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Tab close (×) button -->
+        <Style x:Key="TabCloseButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Margin" Value="0,0,4,0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="3"
+                                Padding="1">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
+
+    <!-- Suppresses the Windows 11 DWM snap-bar handle (white pill at top-center) on borderless windows. -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="0"
+                      CornerRadius="0"
+                      GlassFrameThickness="0"
+                      ResizeBorderThickness="4"
+                      UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
 
     <i:Interaction.Behaviors>
         <bhv:FileDragDropBehavior />
@@ -34,106 +111,224 @@
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="32" />   <!-- Custom title bar -->
-            <RowDefinition Height="44" />   <!-- Toolbar -->
-            <RowDefinition Height="Auto" /> <!-- Update banner (hidden when no update) -->
-            <RowDefinition Height="Auto" /> <!-- File changed banner (hidden when unchanged) -->
-            <RowDefinition Height="Auto" /> <!-- Search panel (collapsible) -->
-            <RowDefinition Height="*" />    <!-- Main content -->
-            <RowDefinition Height="24" />   <!-- Status bar -->
+            <RowDefinition Height="36" />   <!-- 0: Toolbar (also acts as title bar — drag + chrome) -->
+            <RowDefinition Height="Auto" /> <!-- 1: Tab strip -->
+            <RowDefinition Height="Auto" /> <!-- 2: Update banner -->
+            <RowDefinition Height="Auto" /> <!-- 3: File changed banner -->
+            <RowDefinition Height="Auto" /> <!-- 4: Search panel -->
+            <RowDefinition Height="Auto" /> <!-- 5: Edit toolbar -->
+            <RowDefinition Height="*" />    <!-- 6: Main content -->
+            <RowDefinition Height="24" />   <!-- 7: Status bar -->
         </Grid.RowDefinitions>
 
-        <!-- ===== Custom Title Bar ===== -->
-        <Grid Grid.Row="0" Background="{DynamicResource WindowChromeBrush}"
-              MouseLeftButtonDown="OnTitleBarMouseDown">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-
-            <!-- App icon + name -->
-            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0">
-                <!--  <Image Source="pack://application:,,,/Assets/app.ico"
-                       Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0"
-                       RenderOptions.BitmapScalingMode="HighQuality" />  -->
-                <TextBlock Text="EasyPDF" FontSize="12" FontWeight="SemiBold"
-                           Foreground="{DynamicResource WindowChromeTextBrush}"
-                           VerticalAlignment="Center" />
-            </StackPanel>
-
-            <!-- Document title -->
-            <TextBlock Grid.Column="1"
-                       Text="{Binding CurrentDocument.FileName}"
-                       Foreground="{DynamicResource TextSecondaryBrush}"
-                       FontSize="12" VerticalAlignment="Center"
-                       HorizontalAlignment="Center"
-                       Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}" />
-
-            <!-- Window chrome buttons -->
-            <StackPanel Grid.Column="2" Orientation="Horizontal">
-                <Button Content="&#xE921;" Style="{DynamicResource ChromeButtonStyle}"
-                        AutomationProperties.Name="Minimize"
-                        ToolTip="Minimize" Click="MinimizeClick" />
-                <Button x:Name="MaxRestoreButton"
-                        Content="&#xE922;" Style="{DynamicResource ChromeButtonStyle}"
-                        AutomationProperties.Name="Maximize"
-                        ToolTip="Maximize" Click="MaximizeClick" />
-                <Button Content="&#xE8BB;" Style="{DynamicResource CloseButtonStyle}"
-                        AutomationProperties.Name="Close"
-                        ToolTip="Close" Click="CloseClick" />
-            </StackPanel>
-        </Grid>
-
-        <!-- ===== Toolbar ===== -->
-        <Border Grid.Row="1"
+        <!-- ===== Toolbar (also acts as title bar — drag region + window chrome buttons) ===== -->
+        <Border Grid.Row="0"
                 Background="{DynamicResource ToolbarBrush}"
                 BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="0,0,0,1"
                 MouseLeftButtonDown="OnTitleBarMouseDown">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />  <!-- Sidebar toggle + Open -->
+                    <ColumnDefinition Width="Auto" />  <!-- Brand + Menu bar -->
                     <ColumnDefinition Width="*" />     <!-- Page nav -->
-                    <ColumnDefinition Width="Auto" />  <!-- Zoom controls -->
-                    <ColumnDefinition Width="Auto" />  <!-- Right actions -->
+                    <ColumnDefinition Width="Auto" />  <!-- Zoom (out / level / in) -->
+                    <ColumnDefinition Width="Auto" />  <!-- Window chrome (Min/Max/Close) -->
                 </Grid.ColumnDefinitions>
 
-                <!-- Left: sidebar toggle + Open -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0">
-                    <Button Content="☰" Style="{DynamicResource ToolbarButtonStyle}"
+                <!-- Left: brand + application menu -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
+                    <!--   <Image Source="pack://application:,,,/Assets/app-256.png"
+                           Width="20" Height="20" Margin="0,0,10,0"
+                           VerticalAlignment="Center"
+                           RenderOptions.BitmapScalingMode="HighQuality" />
+                    <TextBlock Text="EasyPDF" FontSize="13" FontWeight="Medium"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <Separator Style="{DynamicResource {x:Static ToolBar.SeparatorStyleKey}}"
+                               Width="1" Height="16" Margin="0,0,4,0" /> -->
+
+                    <!-- Sidebar toggle — kept inline as a quick-action (also in View menu) -->
+                    <Button Content="&#xE700;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="0,0,4,0"
                             AutomationProperties.Name="Toggle sidebar"
                             h:Tip.Title="Toggle sidebar"
                             Command="{Binding Sidebar.ToggleVisibilityCommand}" />
-                    <Separator Style="{DynamicResource {x:Static ToolBar.SeparatorStyleKey}}"
-                               Width="1" Height="20" Margin="4,0" />
-                    <Button Style="{DynamicResource ToolbarButtonStyle}"
-                            Command="{Binding OpenFileCommand}"
-                            h:Tip.Title="Open PDF" h:Tip.Keys="Ctrl+O">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE8E5;" FontFamily="Segoe MDL2 Assets"
-                                       FontSize="14" VerticalAlignment="Center" Margin="0,0,5,0" />
-                            <TextBlock  VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
 
-                    <Button Content="&#xE838;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
-                            AutomationProperties.Name="Show in Explorer"
-                            h:Tip.Title="Show in Explorer"
-                            IsEnabled="{Binding HasDocument}"
-                            Command="{Binding OpenInExplorerCommand}" />
+                    <!-- Application menu (commands grouped: File / Edit / View / Tools / Help) -->
+                    <Menu Background="Transparent" BorderThickness="0" Padding="0"
+                          VerticalAlignment="Stretch"
+                          Foreground="{DynamicResource TextSecondaryBrush}">
+                        <Menu.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </Menu.ItemsPanel>
 
-                    <Button Content="&#xE8B7;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
-                             AutomationProperties.Name="File properties"
-                             h:Tip.Title="File properties" h:Tip.Keys="Alt+Enter"
-                             IsEnabled="{Binding HasDocument}"
-                             Click="PropertiesClick" />
+                        <MenuItem Header="_File" Style="{StaticResource TopBarMenuItemStyle}">
+                            <MenuItem Header="_Open PDF..." Command="{Binding OpenFileCommand}"
+                                      InputGestureText="Ctrl+O" />
+                            <Separator />
+                            <MenuItem Header="Show in _Explorer"
+                                      Command="{Binding OpenInExplorerCommand}"
+                                      IsEnabled="{Binding HasDocument}" />
+                            <MenuItem Header="_Properties" InputGestureText="Alt+Enter"
+                                      Click="PropertiesClick"
+                                      IsEnabled="{Binding HasDocument}" />
+                            <Separator />
+                            <MenuItem Header="_Print..." Command="{Binding PrintCommand}"
+                                      InputGestureText="Ctrl+P"
+                                      IsEnabled="{Binding HasDocument}" />
+                            <Separator />
+                            <MenuItem Header="Export Page as _Image..."
+                                      Command="{Binding ExportCurrentPageCommand}"
+                                      IsEnabled="{Binding HasDocument}" />
+                            <MenuItem Header="Export _Annotated PDF..."
+                                      Command="{Binding ExportAnnotatedPdfCommand}"
+                                      InputGestureText="Ctrl+Shift+E"
+                                      IsEnabled="{Binding HasDocument}"
+                                      ToolTip="Rasterizes every page as image and bakes annotations into the pixels. Best for sharing where the receiver may not have an annotation-capable reader." />
+                            <MenuItem Header="_Save Annotations to PDF..."
+                                      Command="{Binding SaveAnnotationsToPdfCommand}"
+                                      IsEnabled="{Binding HasDocument}"
+                                      ToolTip="Preserves the original PDF (selectable text + vectors) and writes annotations as native PDF objects. Best for sharing with users of Adobe / Foxit / other PDF readers." />
+                            <Separator />
+                            <MenuItem Header="E_xit" Click="CloseClick" />
+                        </MenuItem>
 
-                    <Button Content="&#xE721;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
-                             AutomationProperties.Name="Toggle search panel"
-                             Command="{Binding ToggleSearchCommand}"
-                             h:Tip.Title="Search" h:Tip.Keys="Ctrl+F"
-                             IsEnabled="{Binding HasDocument}" />       
+                        <MenuItem Header="_Edit" Style="{StaticResource TopBarMenuItemStyle}">
+                            <MenuItem Header="_Undo"
+                                      Command="{Binding UndoCommand}"
+                                      InputGestureText="Ctrl+Z" />
+                            <MenuItem Header="_Redo"
+                                      Command="{Binding RedoCommand}"
+                                      InputGestureText="Ctrl+Y" />
+                            <Separator />
+                            <MenuItem Header="_Find" Command="{Binding ToggleSearchCommand}"
+                                      InputGestureText="Ctrl+F"
+                                      IsEnabled="{Binding HasDocument}" />
+                            <Separator />
+                            <!-- Highlight currently-selected text (mirror of right-click → Highlight). Select text on the page first. -->
+                            <MenuItem Header="_Highlight Selection" IsEnabled="{Binding HasDocument}">
+                                <MenuItem Header="_Yellow"
+                                          Command="{Binding Viewer.HighlightSelectionCommand}"
+                                          CommandParameter="Yellow" />
+                                <MenuItem Header="_Green"
+                                          Command="{Binding Viewer.HighlightSelectionCommand}"
+                                          CommandParameter="Green" />
+                                <MenuItem Header="_Pink"
+                                          Command="{Binding Viewer.HighlightSelectionCommand}"
+                                          CommandParameter="Pink" />
+                                <MenuItem Header="_Blue"
+                                          Command="{Binding Viewer.HighlightSelectionCommand}"
+                                          CommandParameter="Blue" />
+                                <MenuItem Header="_Red"
+                                          Command="{Binding Viewer.HighlightSelectionCommand}"
+                                          CommandParameter="Red" />
+                            </MenuItem>
+                            <Separator />
+                            <MenuItem Header="_Annotation Mode" IsEnabled="{Binding HasDocument}">
+                                <MenuItem Header="_Note" IsCheckable="True"
+                                          Command="{Binding Viewer.SetEditModeCommand}"
+                                          CommandParameter="{x:Static vm:EditMode.Note}"
+                                          IsChecked="{Binding Viewer.CurrentEditMode,
+                                                      Converter={StaticResource EnumEqConv},
+                                                      ConverterParameter=Note, Mode=OneWay}" />
+                                <MenuItem Header="_Draw (Ink)" IsCheckable="True"
+                                          Command="{Binding Viewer.SetEditModeCommand}"
+                                          CommandParameter="{x:Static vm:EditMode.Ink}"
+                                          IsChecked="{Binding Viewer.CurrentEditMode,
+                                                      Converter={StaticResource EnumEqConv},
+                                                      ConverterParameter=Ink, Mode=OneWay}" />
+                                <MenuItem Header="_Eraser" IsCheckable="True"
+                                          Command="{Binding Viewer.SetEditModeCommand}"
+                                          CommandParameter="{x:Static vm:EditMode.Eraser}"
+                                          IsChecked="{Binding Viewer.CurrentEditMode,
+                                                      Converter={StaticResource EnumEqConv},
+                                                      ConverterParameter=Eraser, Mode=OneWay}" />
+                            </MenuItem>
+                            <MenuItem Header="_Color (Ink)" IsEnabled="{Binding HasDocument}">
+                                <MenuItem Header="_Blue" IsCheckable="True"
+                                          Command="{Binding Viewer.SetInkColorCommand}"
+                                          CommandParameter="#FF2563EB"
+                                          IsChecked="{Binding Viewer.InkColor,
+                                                      Converter={StaticResource EnumEqConv},
+                                                      ConverterParameter=#FF2563EB, Mode=OneWay}" />
+                                <MenuItem Header="_Red" IsCheckable="True"
+                                          Command="{Binding Viewer.SetInkColorCommand}"
+                                          CommandParameter="#FFDC2626"
+                                          IsChecked="{Binding Viewer.InkColor,
+                                                      Converter={StaticResource EnumEqConv},
+                                                      ConverterParameter=#FFDC2626, Mode=OneWay}" />
+                                <MenuItem Header="Bla_ck" IsCheckable="True"
+                                          Command="{Binding Viewer.SetInkColorCommand}"
+                                          CommandParameter="#FF1A1A1A"
+                                          IsChecked="{Binding Viewer.InkColor,
+                                                      Converter={StaticResource EnumEqConv},
+                                                      ConverterParameter=#FF1A1A1A, Mode=OneWay}" />
+                                <MenuItem Header="_Green" IsCheckable="True"
+                                          Command="{Binding Viewer.SetInkColorCommand}"
+                                          CommandParameter="#FF16A34A"
+                                          IsChecked="{Binding Viewer.InkColor,
+                                                      Converter={StaticResource EnumEqConv},
+                                                      ConverterParameter=#FF16A34A, Mode=OneWay}" />
+                                <MenuItem Header="_Orange" IsCheckable="True"
+                                          Command="{Binding Viewer.SetInkColorCommand}"
+                                          CommandParameter="#FFEA580C"
+                                          IsChecked="{Binding Viewer.InkColor,
+                                                      Converter={StaticResource EnumEqConv},
+                                                      ConverterParameter=#FFEA580C, Mode=OneWay}" />
+                            </MenuItem>
+                            <Separator />
+                            <MenuItem Header="Add _Bookmark" Command="{Binding AddBookmarkCommand}"
+                                      InputGestureText="Ctrl+B"
+                                      IsEnabled="{Binding HasDocument}" />
+                        </MenuItem>
+
+                        <MenuItem Header="_View" Style="{StaticResource TopBarMenuItemStyle}">
+                            <MenuItem Header="Zoom _In" Command="{Binding Viewer.ZoomInCommand}"
+                                      InputGestureText="Ctrl++"
+                                      IsEnabled="{Binding HasDocument}" />
+                            <MenuItem Header="Zoom _Out" Command="{Binding Viewer.ZoomOutCommand}"
+                                      InputGestureText="Ctrl+−"
+                                      IsEnabled="{Binding HasDocument}" />
+                            <MenuItem Header="_Reset Zoom" Command="{Binding Viewer.ResetZoomCommand}"
+                                      InputGestureText="Ctrl+0"
+                                      IsEnabled="{Binding HasDocument}" />
+                            <Separator />
+                            <MenuItem Header="Fit to _Width" Command="{Binding Viewer.FitToWidthModeCommand}"
+                                      IsEnabled="{Binding HasDocument}" />
+                            <MenuItem Header="Fit to _Page" Command="{Binding Viewer.FitToPageModeCommand}"
+                                      IsEnabled="{Binding HasDocument}" />
+                            <Separator />
+                            <MenuItem Header="_First Page" Command="{Binding Viewer.FirstPageCommand}"
+                                      IsEnabled="{Binding HasDocument}" />
+                            <MenuItem Header="_Last Page" Command="{Binding Viewer.LastPageCommand}"
+                                      IsEnabled="{Binding HasDocument}" />
+                            <Separator />
+                            <MenuItem Header="Rotate _Left"
+                                      Command="{Binding Viewer.RotateCurrentPageCounterClockwiseCommand}"
+                                      InputGestureText="Ctrl+["
+                                      IsEnabled="{Binding HasDocument}" />
+                            <MenuItem Header="Rotate Ri_ght"
+                                      Command="{Binding Viewer.RotateCurrentPageClockwiseCommand}"
+                                      InputGestureText="Ctrl+]"
+                                      IsEnabled="{Binding HasDocument}" />
+                            <Separator />
+                            <MenuItem Header="Toggle _Sidebar"
+                                      Command="{Binding Sidebar.ToggleVisibilityCommand}" />
+                        </MenuItem>
+
+                        <MenuItem Header="_Tools" Style="{StaticResource TopBarMenuItemStyle}">
+                            <MenuItem Header="Cycle _Theme" Command="{Binding ToggleThemeCommand}"
+                                      ToolTip="Dark · Light · High Contrast" />
+                        </MenuItem>
+
+                        <MenuItem Header="_Help" Style="{StaticResource TopBarMenuItemStyle}">
+                            <MenuItem Header="_Keyboard Shortcuts" Click="ShortcutsClick"
+                                      InputGestureText="F1" />
+                            <Separator />
+                            <MenuItem Header="_About EasyPDF" Click="AboutClick" />
+                        </MenuItem>
+                    </Menu>
                 </StackPanel>
 
                 <!-- Centre: page navigation -->
@@ -141,10 +336,10 @@
                             HorizontalAlignment="Center" VerticalAlignment="Center"
                             Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}">
 
-                    <Button Content="⏮" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
+                    <Button Content="&#xE892;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="2,0"
                             AutomationProperties.Name="First page"
                             Command="{Binding Viewer.FirstPageCommand}" h:Tip.Title="First page" />
-                    <Button Content="◀" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
+                    <Button Content="&#xE76B;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="2,0"
                             AutomationProperties.Name="Previous page"
                             Command="{Binding Viewer.PreviousPageCommand}"
                             h:Tip.Title="Previous page" h:Tip.Keys="← · PageUp" />
@@ -172,11 +367,11 @@
                         </StackPanel>
                     </Border>
 
-                    <Button Content="▶" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
+                    <Button Content="&#xE76C;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="2,0"
                             AutomationProperties.Name="Next page"
                             Command="{Binding Viewer.NextPageCommand}"
                             h:Tip.Title="Next page" h:Tip.Keys="→ · PageDown" />
-                    <Button Content="⏭" Style="{DynamicResource IconButtonStyle}" Margin="2,0"
+                    <Button Content="&#xE893;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="2,0"
                             AutomationProperties.Name="Last page"
                             Command="{Binding Viewer.LastPageCommand}" h:Tip.Title="Last page" />
                 </StackPanel>
@@ -218,71 +413,65 @@
                             AutomationProperties.Name="Zoom in"
                             Command="{Binding Viewer.ZoomInCommand}"
                             h:Tip.Title="Zoom in" h:Tip.Keys="Ctrl++" />
-                    <Button Content="⊡" FontSize="18" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
-                            AutomationProperties.Name="Reset zoom"
-                            Command="{Binding Viewer.ResetZoomCommand}"
-                            h:Tip.Title="Reset zoom" h:Tip.Keys="Ctrl+0" />
-                    <Button Content="⊟" FontSize="18" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
-                            AutomationProperties.Name="Fit to width"
-                            Command="{Binding Viewer.FitToWidthModeCommand}"
-                            h:Tip.Title="Fit to width" />
-                    <Button Content="↕" FontSize="18" Style="{DynamicResource ToolbarButtonStyle}" Margin="1,0"
-                            AutomationProperties.Name="Fit to page"
-                            Command="{Binding Viewer.FitToPageModeCommand}"
-                            h:Tip.Title="Fit to page height" />
-                    <Separator Style="{DynamicResource {x:Static ToolBar.SeparatorStyleKey}}"
-                               Width="1" Height="20" Margin="4,0" />
-                    <Button Content="&#xE7AD;"
-                            Style="{DynamicResource Mdl2IconButtonStyle}"
-                            Margin="1,0"
-                            RenderTransformOrigin="0.5,0.5"
-                            AutomationProperties.Name="Rotate left"
-                            Command="{Binding Viewer.RotateCurrentPageCounterClockwiseCommand}"
-                            h:Tip.Title="Rotate page left"
-                            h:Tip.Keys="Ctrl+[">
-                        <Button.RenderTransform>
-                            <ScaleTransform ScaleX="-1"/>
-                        </Button.RenderTransform>
-                    </Button>
-                    <Button Content="&#xE7AD;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
-                            AutomationProperties.Name="Rotate right"
-                            Command="{Binding Viewer.RotateCurrentPageClockwiseCommand}"
-                            h:Tip.Title="Rotate page right" h:Tip.Keys="Ctrl+]" />
                 </StackPanel>
 
-                <StackPanel Grid.Column="3" Orientation="Horizontal"
-                            VerticalAlignment="Center" Margin="4,0">
-                    <Button Content="&#xE734;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
-                            AutomationProperties.Name="Add bookmark"
-                            Command="{Binding AddBookmarkCommand}"
-                            h:Tip.Title="Add bookmark" h:Tip.Keys="Ctrl+B"
-                            IsEnabled="{Binding HasDocument}" />
-                    <Button Content="&#xE749;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
-                            AutomationProperties.Name="Print"
-                            Command="{Binding PrintCommand}"
-                            h:Tip.Title="Print" h:Tip.Keys="Ctrl+P"
-                            IsEnabled="{Binding HasDocument}" />
-                    <Button Content="&#xEB9F;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
-                            AutomationProperties.Name="Export page as image"
-                            Command="{Binding ExportCurrentPageCommand}"
-                            h:Tip.Title="Export page as image" h:Tip.Keys="PNG · JPG"
-                            IsEnabled="{Binding HasDocument}" />
-                   
-                    <Button Content="&#xE793;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
-                            AutomationProperties.Name="Cycle theme"
-                            Command="{Binding ToggleThemeCommand}"
-                            h:Tip.Title="Cycle theme" h:Tip.Keys="Dark · Light · High Contrast" />
-                    <Separator Style="{DynamicResource {x:Static ToolBar.SeparatorStyleKey}}"
-                               Width="1" Height="20" Margin="4,0" />
-                    <Button Content="&#xE765;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
-                            AutomationProperties.Name="Keyboard shortcuts"
-                            h:Tip.Title="Keyboard shortcuts" h:Tip.Keys="F1"
-                            Click="ShortcutsClick" />
-                    <Button Content="&#xE946;" Style="{DynamicResource Mdl2IconButtonStyle}" Margin="1,0"
-                            AutomationProperties.Name="About"
-                            h:Tip.Title="About EasyPDF" Click="AboutClick" />
+                <!-- Window chrome buttons — flush to top-right corner, gap acts as drag region -->
+                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Stretch" Margin="12,0,0,0">
+                    <Button Content="&#xE921;" Style="{DynamicResource ChromeButtonStyle}"
+                            AutomationProperties.Name="Minimize"
+                            ToolTip="Minimize" Click="MinimizeClick" />
+                    <Button x:Name="MaxRestoreButton"
+                            Content="&#xE922;" Style="{DynamicResource ChromeButtonStyle}"
+                            AutomationProperties.Name="Maximize"
+                            ToolTip="Maximize" Click="MaximizeClick" />
+                    <Button Content="&#xE8BB;" Style="{DynamicResource CloseButtonStyle}"
+                            AutomationProperties.Name="Close"
+                            ToolTip="Close" Click="CloseClick" />
                 </StackPanel>
             </Grid>
+        </Border>
+
+        <!-- ===== Tab Strip ===== -->
+        <Border Grid.Row="1"
+                Background="{DynamicResource ToolbarBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,0,0,1"
+                Visibility="{Binding HasTabs, Converter={StaticResource BoolToVis}}">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                          PanningMode="HorizontalOnly">
+                <ItemsControl ItemsSource="{Binding Tabs}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:PdfTabViewModel}">
+                            <StackPanel Orientation="Horizontal">
+                                <!-- Activate button -->
+                                <Button MaxWidth="220"
+                                        Style="{StaticResource TabButtonStyle}"
+                                        Command="{Binding DataContext.ActivateTabCommand,
+                                                          RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}"
+                                        ToolTip="{Binding Document.FilePath}">
+                                    <TextBlock Text="{Binding TabTitle}"
+                                               TextTrimming="CharacterEllipsis"
+                                               MaxWidth="180"
+                                               VerticalAlignment="Center" />
+                                </Button>
+                                <!-- Close button -->
+                                <Button Content="✕"
+                                        Style="{StaticResource TabCloseButtonStyle}"
+                                        Command="{Binding DataContext.CloseTabCommand,
+                                                          RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}"
+                                        ToolTip="Close tab (Ctrl+W)" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
         </Border>
 
         <!-- ===== Update Banner ===== -->
@@ -300,7 +489,6 @@
                         <Run Text="is available." />
                     </TextBlock>
 
-                    <!-- Velopack: download in-app -->
                     <Button Content="Download"
                             Margin="12,0,0,0" Padding="10,3" FontSize="12"
                             Background="White" Foreground="#E67E22" BorderThickness="0" Cursor="Hand"
@@ -308,7 +496,6 @@
                             Visibility="{Binding CanDownloadUpdate, Converter={StaticResource BoolToVis}}"
                             ToolTip="Download update" />
 
-                    <!-- Fallback: open browser (when Velopack not active, e.g. portable build) -->
                     <Button Content="Open Page"
                             Margin="12,0,0,0" Padding="10,3" FontSize="12"
                             Background="White" Foreground="#E67E22" BorderThickness="0" Cursor="Hand"
@@ -316,7 +503,6 @@
                             Visibility="{Binding UpdateCanInstall, Converter={StaticResource InvBoolToVis}}"
                             ToolTip="Open release page in browser" />
 
-                    <!-- Download progress -->
                     <StackPanel Orientation="Horizontal" Margin="12,0,0,0"
                                 Visibility="{Binding IsDownloadingUpdate, Converter={StaticResource BoolToVis}}">
                         <ProgressBar Width="120" Height="6" Minimum="0" Maximum="100"
@@ -327,7 +513,6 @@
                         </TextBlock>
                     </StackPanel>
 
-                    <!-- Install & Restart -->
                     <Button Content="Install &amp; Restart"
                             Margin="12,0,0,0" Padding="10,3" FontSize="12"
                             Background="White" Foreground="#E67E22" BorderThickness="0" Cursor="Hand"
@@ -450,8 +635,10 @@
             </Grid>
         </Border>
 
+        <!-- Row 6: reserved (annotation toolbar moved to main toolbar) -->
+
         <!-- ===== Main Content ===== -->
-        <Grid Grid.Row="5">
+        <Grid Grid.Row="6">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="SidebarColumn"   Width="260" MinWidth="160" />
                 <ColumnDefinition x:Name="SplitterColumn"  Width="4" />
@@ -471,18 +658,19 @@
 
             <!-- PDF Viewer or Welcome screen -->
             <Grid Grid.Column="2">
-                <!-- Welcome / empty state — two-row Grid avoids ScrollViewer centering quirks -->
+                <!-- Welcome / empty state -->
                 <Grid Background="{DynamicResource BackgroundBrush}"
                       Visibility="{Binding HasDocument, Converter={StaticResource InvBoolToVis}}">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />  <!-- hero section -->
-                        <RowDefinition Height="*" />     <!-- recent files, scrollable -->
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
                     <!-- Hero -->
                     <StackPanel Grid.Row="0" HorizontalAlignment="Center" Margin="0,48,0,24">
-                        <TextBlock Text="📄" FontSize="56" HorizontalAlignment="Center"
-                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                        <Image Source="pack://application:,,,/Assets/app-256.png"
+                               Width="80" Height="80" HorizontalAlignment="Center"
+                               RenderOptions.BitmapScalingMode="HighQuality" />
                         <TextBlock Text="EasyPDF" FontSize="28" FontWeight="Light"
                                    Foreground="{DynamicResource TextPrimaryBrush}"
                                    HorizontalAlignment="Center" Margin="0,8,0,4" />
@@ -495,7 +683,7 @@
                                 HorizontalAlignment="Center" Padding="24,8" />
                     </StackPanel>
 
-                    <!-- Recent files — scrollable list fills remaining height -->
+                    <!-- Recent files -->
                     <Grid Grid.Row="1">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
@@ -515,7 +703,6 @@
                                     ToolTip="Clear recent files" />
                         </Grid>
 
-                        <!-- Empty state -->
                         <TextBlock Grid.Row="1"
                                    Text="No files opened yet"
                                    FontSize="13"
@@ -553,10 +740,7 @@
                     </Grid>
                 </Grid>
 
-                <!-- Main viewer — Border owns Visibility (DataContext=MainViewModel, no RelativeSource needed).
-                     RelativeSource on PdfViewerView itself was unreliable: when DataContext=Viewer was
-                     resolved, the RelativeSource binding could fail and leave PdfViewerView Visible,
-                     painting its PageBackgroundBrush over the welcome screen. -->
+                <!-- Main viewer -->
                 <Border Visibility="{Binding HasDocument, Converter={StaticResource BoolToVis}}">
                     <views:PdfViewerView DataContext="{Binding Viewer}" />
                 </Border>
@@ -566,9 +750,7 @@
                         Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                         <Grid Width="48" Height="48" HorizontalAlignment="Center" Margin="0,0,0,14">
-                            <!-- Faint track circle -->
                             <Ellipse Stroke="White" StrokeThickness="4" Opacity="0.2" />
-                            <!-- Spinning 270° arc -->
                             <Path Stroke="White" StrokeThickness="4"
                                   StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                                   Width="48" Height="48" Stretch="None"
@@ -606,7 +788,7 @@
         </Grid>
 
         <!-- ===== Status Bar ===== -->
-        <Border Grid.Row="6"
+        <Border Grid.Row="7"
                 Background="{DynamicResource ToolbarBrush}"
                 BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="0,1,0,0">

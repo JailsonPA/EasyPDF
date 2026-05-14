@@ -4,36 +4,98 @@ using EasyPDF.Application.Interfaces;
 using EasyPDF.Core;
 using EasyPDF.Core.Interfaces;
 using EasyPDF.Core.Models;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 
 namespace EasyPDF.Application.ViewModels;
 
-/// <summary>
-/// Top-level coordinator: owns the document lifecycle and delegates to child ViewModels.
-/// </summary>
 public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
 {
-    private readonly IPdfDocumentService _docService;
+    private readonly IServiceProvider _serviceProvider;
     private readonly IRecentFilesRepository _recentRepo;
     private readonly IDialogService _dialogService;
     private readonly IThemeService _themeService;
-    private readonly IPrintService _printService;
-    private readonly IExportService _exportService;
     private readonly IUpdateService _updateService;
     private readonly AppSettings _settings;
     private readonly ILogger<MainViewModel> _logger;
     private readonly SynchronizationContext? _uiContext;
 
-    private FileSystemWatcher? _watcher;
-    private CancellationTokenSource? _watchDebounce;
+
+    public ObservableCollection<PdfTabViewModel> Tabs { get; } = [];
+    public bool HasTabs => Tabs.Count > 0;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Title))]
-    [NotifyPropertyChangedFor(nameof(HasDocument))]
-    [NotifyPropertyChangedFor(nameof(IsSidebarVisible))]
-    private PdfDocument? _currentDocument;
+    private PdfTabViewModel? _activeTab;
+
+    partial void OnActiveTabChanged(PdfTabViewModel? oldValue, PdfTabViewModel? newValue)
+    {
+        if (oldValue is not null)
+        {
+            oldValue.Sidebar.PropertyChanged -= OnActiveSidebarPropertyChanged;
+            oldValue.PropertyChanged -= OnActiveTabPropertyChanged;
+            oldValue.IsActive = false;
+        }
+        if (newValue is not null)
+        {
+            newValue.Sidebar.PropertyChanged += OnActiveSidebarPropertyChanged;
+            newValue.PropertyChanged += OnActiveTabPropertyChanged;
+            newValue.IsActive = true;
+        }
+
+        OnPropertyChanged(nameof(Viewer));
+        OnPropertyChanged(nameof(Sidebar));
+        OnPropertyChanged(nameof(Search));
+        OnPropertyChanged(nameof(CurrentDocument));
+        OnPropertyChanged(nameof(HasDocument));
+        OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(IsSidebarVisible));
+        OnPropertyChanged(nameof(IsSearchPanelOpen));
+        OnPropertyChanged(nameof(FileChangedOnDisk));
+    }
+
+    private void OnActiveSidebarPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SidebarViewModel.IsVisible))
+            OnPropertyChanged(nameof(IsSidebarVisible));
+    }
+
+    private void OnActiveTabPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
+        {
+            case nameof(PdfTabViewModel.IsSearchPanelOpen):
+                OnPropertyChanged(nameof(IsSearchPanelOpen));
+                break;
+            case nameof(PdfTabViewModel.FileChangedOnDisk):
+                OnPropertyChanged(nameof(FileChangedOnDisk));
+                break;
+        }
+    }
+
+
+    public PdfViewerViewModel? Viewer => ActiveTab?.Viewer;
+    public SidebarViewModel? Sidebar => ActiveTab?.Sidebar;
+    public SearchViewModel? Search => ActiveTab?.Search;
+    public PdfDocument? CurrentDocument => ActiveTab?.Document;
+    public bool HasDocument => ActiveTab is not null;
+
+    public string Title => CurrentDocument is null
+        ? "EasyPDF"
+        : $"{CurrentDocument.FileName} — EasyPDF";
+
+    public bool IsSidebarVisible => HasDocument && (ActiveTab?.Sidebar.IsVisible ?? false);
+
+    public bool IsSearchPanelOpen
+    {
+        get => ActiveTab?.IsSearchPanelOpen ?? false;
+        set { if (ActiveTab is not null) ActiveTab.IsSearchPanelOpen = value; }
+    }
+
+    public bool FileChangedOnDisk => ActiveTab?.FileChangedOnDisk ?? false;
+
 
     [ObservableProperty]
     private bool _isLoading;
@@ -43,12 +105,6 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
 
     [ObservableProperty]
     private AppTheme _currentTheme;
-
-    [ObservableProperty]
-    private bool _isSearchPanelOpen;
-
-    [ObservableProperty]
-    private bool _fileChangedOnDisk;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(UpdateAvailable))]
@@ -70,79 +126,32 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
     public bool UpdateCanInstall => _updateService.CanInstall;
     public bool CanDownloadUpdate => UpdateAvailable && UpdateCanInstall && !IsDownloadingUpdate && !IsUpdateDownloaded;
 
-    public string Title => CurrentDocument is null
-        ? "EasyPDF"
-        : $"{CurrentDocument.FileName} — EasyPDF";
-
-    public bool HasDocument => CurrentDocument is not null;
-    public bool IsSidebarVisible => HasDocument && Sidebar.IsVisible;
-
-    public PdfViewerViewModel Viewer { get; }
-    public SidebarViewModel Sidebar { get; }
-    public SearchViewModel Search { get; }
-
     public ObservableCollection<RecentFile> RecentFiles { get; } = [];
     public bool HasRecentFiles => RecentFiles.Count > 0;
 
     public MainViewModel(
-        IPdfDocumentService docService,
+        IServiceProvider serviceProvider,
         IRecentFilesRepository recentRepo,
         IDialogService dialogService,
         IThemeService themeService,
-        IPrintService printService,
-        IExportService exportService,
         IUpdateService updateService,
         AppSettings settings,
-        PdfViewerViewModel viewer,
-        SidebarViewModel sidebar,
-        SearchViewModel search,
         ILogger<MainViewModel> logger)
     {
-        _docService    = docService;
-        _recentRepo    = recentRepo;
-        _dialogService = dialogService;
-        _themeService  = themeService;
-        _printService  = printService;
-        _exportService = exportService;
-        _updateService = updateService;
-        _settings      = settings;
-        _logger        = logger;
-        _uiContext     = SynchronizationContext.Current;
-
-        Viewer = viewer;
-        Sidebar = sidebar;
-        Search = search;
+        _serviceProvider = serviceProvider;
+        _recentRepo      = recentRepo;
+        _dialogService   = dialogService;
+        _themeService    = themeService;
+        _updateService   = updateService;
+        _settings        = settings;
+        _logger          = logger;
+        _uiContext       = SynchronizationContext.Current;
 
         _currentTheme = themeService.CurrentTheme;
         themeService.ThemeChanged += (_, t) => CurrentTheme = t;
+
+        Tabs.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTabs));
         RecentFiles.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasRecentFiles));
-
-        // Keep IsSidebarVisible in sync when the user toggles sidebar visibility.
-        Sidebar.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(SidebarViewModel.IsVisible))
-                OnPropertyChanged(nameof(IsSidebarVisible));
-        };
-
-        // Wire sidebar → viewer navigation
-        Sidebar.PageNavigationRequested += (_, page) => Viewer.GoToPageCommand.Execute(page);
-
-        // Wire viewer → sidebar: keep thumbnail selection in sync with the current page.
-        Viewer.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(PdfViewerViewModel.CurrentPageIndex))
-                Sidebar.SetSelectedPage(Viewer.CurrentPageIndex);
-        };
-
-        // Wire search → viewer: navigate + update highlight overlay
-        Search.ResultNavigateRequested += (_, result) =>
-        {
-            Viewer.GoToPageCommand.Execute(result.PageIndex);
-            Viewer.UpdateSearchHighlights(Search.Results, Search.CurrentResultIndex);
-        };
-
-        // Show all highlights when a search finishes; clear them when results are wiped.
-        Search.PropertyChanged += OnSearchPropertyChanged;
     }
 
     public async Task InitializeAsync()
@@ -152,19 +161,22 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
         foreach (var r in await LoadAndPurgeMissingRecentFilesAsync())
             RecentFiles.Add(r);
 
-        // Fire-and-forget: check for a newer release in the background.
-        // A 3-second startup delay avoids contending with the initial PDF render.
-        _ = CheckForUpdateAfterDelayAsync();
+        _ = CheckForUpdateAsync();
     }
 
-    private async Task CheckForUpdateAfterDelayAsync()
+
+    private async Task CheckForUpdateAsync()
     {
+        // Fire-and-forget on the thread pool — ConfigureAwait(false) keeps the network call
+        // off the UI thread without needing an artificial Task.Delay to "yield" startup.
         try
         {
-            await Task.Delay(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
             PendingUpdate = await _updateService.CheckForUpdateAsync().ConfigureAwait(false);
         }
-        catch { /* never surface update-check errors */ }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Update check failed");
+        }
     }
 
     private CancellationTokenSource? _downloadCts;
@@ -228,12 +240,47 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
         }
     }
 
+
     [RelayCommand]
-    private async Task ClearRecentFilesAsync()
+    private void ActivateTab(PdfTabViewModel tab) => ActiveTab = tab;
+
+    [RelayCommand]
+    private async Task CloseTabAsync(PdfTabViewModel? tab)
     {
-        await _recentRepo.ClearAsync();
-        RecentFiles.Clear();
+        tab ??= ActiveTab;
+        if (tab is null) return;
+
+        await SaveLastPageForTabAsync(tab);
+        tab.StopWatching();
+        tab.FileChangedOnDisk = false;
+
+        try
+        {
+            tab.DocumentService.Close();
+        }
+        catch (TimeoutException ex)
+        {
+            _logger.LogError(ex, "Timed out waiting for renders to finish before closing document");
+            await _dialogService.ShowErrorAsync("Close Failed", "The document could not be closed because a render operation is taking too long. Try again in a moment.");
+            return;
+        }
+
+        tab.Viewer.Clear();
+        tab.Sidebar.Clear();
+        tab.Search.ClearSearchCommand.Execute(null);
+        tab.Search.TotalPages = 0;
+
+        bool wasActive = ActiveTab == tab;
+        int idx = Tabs.IndexOf(tab);
+        Tabs.Remove(tab);
+
+        if (wasActive)
+            ActiveTab = Tabs.Count > 0 ? Tabs[Math.Max(0, Math.Min(idx, Tabs.Count - 1))] : null;
+
+        _ = tab.DisposeAsync().AsTask();
+        SetStatus("Document closed.");
     }
+
 
     [RelayCommand]
     private async Task OpenFileAsync()
@@ -247,56 +294,48 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
     private async Task OpenRecentAsync(RecentFile recent) =>
         await LoadDocumentAsync(recent.FilePath);
 
-    /// <summary>
-    /// Persists the current page index so the next open restores the reading position.
-    /// Safe to call fire-and-forget on app shutdown.
-    /// </summary>
-    public async Task SaveLastPageAsync()
+    [RelayCommand]
+    private async Task ClearRecentFilesAsync()
     {
-        if (CurrentDocument is null) return;
-        var existing = RecentFiles
-            .FirstOrDefault(r => r.FilePath.Equals(CurrentDocument.FilePath, StringComparison.OrdinalIgnoreCase));
-        if (existing is not null)
-            await _recentRepo.AddOrUpdateAsync(existing with { LastPageIndex = Viewer.CurrentPageIndex });
+        await _recentRepo.ClearAsync();
+        RecentFiles.Clear();
     }
 
     [RelayCommand]
-    private async Task CloseDocumentAsync()
+    private async Task ReloadDocumentAsync()
     {
-        StopWatching();
-        FileChangedOnDisk = false;
-        await SaveLastPageAsync();
-
-        try
+        if (ActiveTab is null) return;
+        string path = ActiveTab.Document.FilePath;
+        int tabIndex = Tabs.IndexOf(ActiveTab);
+        ActiveTab.FileChangedOnDisk = false;
+        await CloseTabAsync(ActiveTab);
+        await LoadDocumentAsync(path);
+        if (Tabs.Count > 0 && tabIndex >= 0 && tabIndex < Tabs.Count - 1)
         {
-            _docService.Close();
+            var newTab = Tabs[^1];
+            Tabs.Move(Tabs.Count - 1, tabIndex);
+            ActiveTab = newTab;
         }
-        catch (TimeoutException ex)
-        {
-            _logger.LogError(ex, "Timed out waiting for renders to finish before closing document");
-            await _dialogService.ShowErrorAsync("Close Failed", "The document could not be closed because a render operation is taking too long. Try again in a moment.");
-            return;
-        }
-
-        CurrentDocument = null;
-        IsSearchPanelOpen = false;
-        Viewer.Clear();
-        Sidebar.Clear();
-        Search.ClearSearchCommand.Execute(null);
-        Search.TotalPages = 0;
-        SetStatus("Document closed.");
     }
+
+    [RelayCommand]
+    private void DismissFileChanged()
+    {
+        if (ActiveTab is not null)
+            ActiveTab.FileChangedOnDisk = false;
+    }
+
 
     [RelayCommand]
     private async Task AddBookmarkAsync()
     {
-        if (CurrentDocument is null) return;
+        if (CurrentDocument is null || ActiveTab is null) return;
 
-        string defaultTitle = $"Page {Viewer.CurrentPageIndex + 1}";
+        string defaultTitle = $"Page {Viewer!.CurrentPageIndex + 1}";
         string? title = await _dialogService.PromptAsync("Add Bookmark", "Bookmark name", defaultTitle);
         if (title is null) return;
 
-        await Sidebar.AddBookmarkAsync(CurrentDocument!.FilePath, Viewer.CurrentPageIndex, title);
+        await Sidebar!.AddBookmarkAsync(CurrentDocument.FilePath, Viewer.CurrentPageIndex, title);
         Sidebar.ActiveTab = SidebarTab.Bookmarks;
         SetStatus($"Bookmark added: {title}");
     }
@@ -304,8 +343,6 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
     [RelayCommand]
     private void ToggleTheme()
     {
-        // Cycles Dark → Light → HighContrast → Dark.
-        // System resolves to whichever concrete theme Windows reports, so treat it as Dark when cycling.
         var next = CurrentTheme switch
         {
             AppTheme.Dark         => AppTheme.Light,
@@ -317,11 +354,26 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
     }
 
     [RelayCommand]
+    private async Task UndoAsync()
+    {
+        if (Viewer is null) return;
+        await Viewer.UndoAsync(default);
+    }
+
+    [RelayCommand]
+    private async Task RedoAsync()
+    {
+        if (Viewer is null) return;
+        await Viewer.RedoAsync(default);
+    }
+
+    [RelayCommand]
     private void ToggleSearch()
     {
-        IsSearchPanelOpen = !IsSearchPanelOpen;
-        if (!IsSearchPanelOpen)
-            Search.ClearSearchCommand.Execute(null);
+        if (ActiveTab is null) return;
+        ActiveTab.IsSearchPanelOpen = !ActiveTab.IsSearchPanelOpen;
+        if (!ActiveTab.IsSearchPanelOpen)
+            ActiveTab.Search.ClearSearchCommand.Execute(null);
     }
 
     [RelayCommand]
@@ -330,7 +382,6 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
         if (CurrentDocument is null) return;
         try
         {
-            // /select highlights the file in Explorer instead of just opening the folder.
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
                 "explorer.exe", $"/select,\"{CurrentDocument.FilePath}\"")
                 { UseShellExecute = true });
@@ -344,17 +395,94 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
     [RelayCommand]
     private async Task PrintAsync()
     {
-        if (CurrentDocument is null) return;
-        await _printService.PrintAsync(CurrentDocument.FileName, CurrentDocument.Pages);
+        if (ActiveTab is null) return;
+        var viewer = ActiveTab.Viewer;
+        await ActiveTab.PrintService.PrintAsync(
+            ActiveTab.Document.FileName,
+            ActiveTab.Document.Pages,
+            viewer.Annotations,
+            viewer.CurrentPageIndex);
         SetStatus("Print job sent.");
+    }
+
+    [RelayCommand]
+    private async Task ExportAnnotatedPdfAsync()
+    {
+        if (ActiveTab is null || Viewer is null) return;
+
+        string suggested = Path.GetFileNameWithoutExtension(ActiveTab.Document.FileName) + "_anotado";
+        string? path = await _dialogService.SavePdfFileAsync(suggested);
+        if (path is null) return;
+
+        IsLoading = true;
+        SetStatus("Exportando PDF…");
+        try
+        {
+            await Viewer.ExportToPathAsync(path);
+            SetStatus($"PDF exportado: {Path.GetFileName(path)}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Export failed");
+            await _dialogService.ShowErrorAsync("Erro ao Exportar", ex.Message);
+            SetStatus("Exportação falhou.");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    /// "Save Annotations to PDF" — preserves the original PDF (selectable text,
+    /// vectors) and writes annotations as native PDF objects on top. Distinct from
+    /// "Export Annotated PDF" which rasterizes every page; this one keeps the
+    /// original quality and lets the receiver's PDF reader edit/remove the
+    /// annotations normally.
+    [RelayCommand]
+    private async Task SaveAnnotationsToPdfAsync()
+    {
+        if (ActiveTab is null || Viewer is null) return;
+
+        string suggested = Path.GetFileNameWithoutExtension(ActiveTab.Document.FileName) + "_annotated";
+        string? path = await _dialogService.SavePdfFileAsync(suggested);
+        if (path is null) return;
+
+        // Refuse in-place overwrite — PdfSharp opens the source while writing and an
+        // overwrite collapses to the same handle, corrupting the file.
+        if (string.Equals(path, ActiveTab.Document.FilePath, StringComparison.OrdinalIgnoreCase))
+        {
+            await _dialogService.ShowErrorAsync(
+                "Choose a different file",
+                "Saving over the original PDF is not supported — please pick a different destination.");
+            return;
+        }
+
+        IsLoading = true;
+        SetStatus("Saving annotations to PDF…");
+        try
+        {
+            await Viewer.SaveAnnotationsToPdfAsync(path);
+            SetStatus($"Saved: {Path.GetFileName(path)}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Save annotations to PDF failed");
+            await _dialogService.ShowErrorAsync("Save Failed",
+                $"Could not save annotations into the PDF. The file may be encrypted, signed, or use a structure that's not supported for editing.\n\n{ex.Message}");
+            SetStatus("Save failed.");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
     }
 
     [RelayCommand]
     private async Task ExportCurrentPageAsync()
     {
-        if (CurrentDocument is null) return;
+        if (ActiveTab is null || Viewer is null) return;
 
-        string suggested = $"{Path.GetFileNameWithoutExtension(CurrentDocument.FileName)}_page{Viewer.CurrentPageIndex + 1}";
+        string suggested = $"{Path.GetFileNameWithoutExtension(ActiveTab.Document.FileName)}_page{Viewer.CurrentPageIndex + 1}";
         string? path = await _dialogService.SaveImageFileAsync(suggested);
         if (path is null) return;
 
@@ -362,7 +490,7 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
         SetStatus("Exporting…");
         try
         {
-            await _exportService.ExportPageAsync(Viewer.CurrentPageIndex, path, dpi: 150);
+            await ActiveTab.ExportService.ExportPageAsync(Viewer.CurrentPageIndex, path, dpi: 150);
             SetStatus($"Page {Viewer.CurrentPageIndex + 1} exported.");
         }
         catch (Exception ex)
@@ -377,6 +505,7 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
         }
     }
 
+
     public async Task DropFileAsync(string filePath)
     {
         if (!filePath.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
@@ -387,74 +516,6 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
         await LoadDocumentAsync(filePath);
     }
 
-    [RelayCommand]
-    private async Task ReloadDocumentAsync()
-    {
-        if (CurrentDocument is null) return;
-        string path = CurrentDocument.FilePath;
-        FileChangedOnDisk = false;
-        await CloseDocumentAsync();
-        await LoadDocumentAsync(path);
-    }
-
-    [RelayCommand]
-    private void DismissFileChanged() => FileChangedOnDisk = false;
-
-    private void StartWatching(string filePath)
-    {
-        StopWatching();
-        string? dir = Path.GetDirectoryName(filePath);
-        if (dir is null || !Directory.Exists(dir)) return;
-
-        try
-        {
-            _watcher = new FileSystemWatcher(dir, Path.GetFileName(filePath))
-            {
-                NotifyFilter        = NotifyFilters.LastWrite | NotifyFilters.Size,
-                EnableRaisingEvents = true
-            };
-            _watcher.Changed += OnWatchedFileEvent;
-            _watcher.Created += OnWatchedFileEvent;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "FileSystemWatcher could not be started for {Path}", filePath);
-        }
-    }
-
-    private void StopWatching()
-    {
-        if (_watcher is not null)
-        {
-            _watcher.EnableRaisingEvents = false;
-            _watcher.Changed -= OnWatchedFileEvent;
-            _watcher.Created -= OnWatchedFileEvent;
-            _watcher.Dispose();
-            _watcher = null;
-        }
-
-        _watchDebounce?.Cancel();
-        _watchDebounce?.Dispose();
-        _watchDebounce = null;
-    }
-
-    private void OnWatchedFileEvent(object sender, FileSystemEventArgs e)
-    {
-        // Debounce: many editors write a file in multiple bursts.
-        _watchDebounce?.Cancel();
-        _watchDebounce?.Dispose();
-        var cts = new CancellationTokenSource();
-        _watchDebounce = cts;
-
-        _ = Task.Delay(600, cts.Token).ContinueWith(t =>
-        {
-            if (!t.IsCompletedSuccessfully) return;
-            if (_uiContext is not null)
-                _uiContext.Post(_ => FileChangedOnDisk = true, null);
-            else
-                FileChangedOnDisk = true;
-        }, TaskScheduler.Default);
-    }
 
     private async Task LoadDocumentAsync(string filePath)
     {
@@ -464,10 +525,13 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
             return;
         }
 
-        // Read stored last-page before the upsert below overwrites it.
-        int lastPageIndex = RecentFiles
-            .FirstOrDefault(r => r.FilePath.Equals(filePath, StringComparison.OrdinalIgnoreCase))
-            ?.LastPageIndex ?? 0;
+        var existing = Tabs.FirstOrDefault(t =>
+            t.Document.FilePath.Equals(filePath, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
+        {
+            ActiveTab = existing;
+            return;
+        }
 
         var fileSize = new FileInfo(filePath).Length;
         if (fileSize > _settings.LargeFileSizeBytes)
@@ -479,42 +543,52 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
             if (!proceed) return;
         }
 
-        StopWatching();
-        FileChangedOnDisk = false;
         IsLoading = true;
         SetStatus("Opening…");
 
+        var scope = _serviceProvider.CreateScope();
         try
         {
-            var doc = await OpenWithPasswordAsync(filePath);
-            if (doc is null) { SetStatus("Open cancelled."); return; }
+            var docService = scope.ServiceProvider.GetRequiredService<IPdfDocumentService>();
+            var doc = await OpenWithPasswordAsync(docService, filePath);
+            if (doc is null)
+            {
+                scope.Dispose();
+                SetStatus("Open cancelled.");
+                return;
+            }
 
-            CurrentDocument = doc;
+            var tab = new PdfTabViewModel(scope, doc, _uiContext);
+            tab.Viewer.LoadDocument(doc);
+            await tab.Sidebar.LoadDocumentAsync(doc);
+            await tab.Viewer.LoadAnnotationsAsync(doc.FilePath, doc.ContentHash);
+            tab.Search.TotalPages = doc.PageCount;
 
-            Viewer.LoadDocument(doc);
-            await Sidebar.LoadDocumentAsync(doc);
-            Search.TotalPages = doc.PageCount;
+            // Look up "last page" with hash-first preference so the bookmark survives a
+            // file rename/move. Falls back to path match for legacy entries with no hash.
+            int lastPageIndex = FindLastPageIndex(doc.FilePath, doc.ContentHash);
 
-            // Restore the last viewed page (scroll syncs sidebar selection too).
             if (lastPageIndex > 0 && lastPageIndex < doc.PageCount)
-                Viewer.GoToPageCommand.Execute(lastPageIndex);
+                tab.Viewer.GoToPageCommand.Execute(lastPageIndex);
 
-            // Sync sidebar selection after thumb index is populated.
-            // Viewer.LoadDocument fires CurrentPageIndex before LoadDocumentAsync
-            // fills _thumbIndex, so SetSelectedPage above found nothing.
-            Sidebar.SetSelectedPage(Viewer.CurrentPageIndex);
+            tab.Sidebar.SetSelectedPage(tab.Viewer.CurrentPageIndex);
 
-            // Preserve lastPageIndex so it isn't reset to 0 on every open.
             await _recentRepo.AddOrUpdateAsync(new RecentFile(
                 doc.FilePath, doc.FileName, doc.PageCount,
-                doc.FileSizeBytes, DateTime.UtcNow, lastPageIndex));
+                doc.FileSizeBytes, DateTime.UtcNow, lastPageIndex)
+                { ContentHash = doc.ContentHash });
 
             await RefreshRecentFilesAsync();
-            StartWatching(doc.FilePath);
+            tab.StartWatching(doc.FilePath);
+
+            Tabs.Add(tab);
+            ActiveTab = tab;
+
             SetStatus($"Opened {doc.FileName}  ·  {doc.PageCount} pages");
         }
         catch (Exception ex)
         {
+            scope.Dispose();
             _logger.LogError(ex, "Failed to open {Path}", filePath);
             await _dialogService.ShowErrorAsync("Cannot Open File", ex.Message);
             SetStatus("Failed to open file.");
@@ -525,16 +599,11 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
         }
     }
 
-    /// <summary>
-    /// Opens a PDF, prompting for a password up to 3 times if needed.
-    /// Returns null if the user cancels or exhausts all attempts.
-    /// </summary>
-    private async Task<PdfDocument?> OpenWithPasswordAsync(string filePath)
+    private async Task<PdfDocument?> OpenWithPasswordAsync(IPdfDocumentService docService, string filePath)
     {
-        // First attempt — works for unencrypted PDFs without any dialog.
         try
         {
-            return await _docService.OpenAsync(filePath);
+            return await docService.OpenAsync(filePath);
         }
         catch (PdfPasswordRequiredException)
         {
@@ -548,12 +617,12 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
             string? password = await _dialogService.PromptPasswordAsync(
                 Path.GetFileName(filePath), errorMsg);
 
-            if (password is null) return null; // user cancelled
+            if (password is null) return null;
 
             IsLoading = true;
             try
             {
-                return await _docService.OpenAsync(filePath, password);
+                return await docService.OpenAsync(filePath, password);
             }
             catch (PdfPasswordRequiredException)
             {
@@ -566,20 +635,32 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
         return null;
     }
 
-    private void OnSearchPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        switch (e.PropertyName)
-        {
-            // Search just finished — paint all match rectangles (no active one yet).
-            case nameof(SearchViewModel.IsSearching) when !Search.IsSearching && Search.TotalResults > 0:
-                Viewer.UpdateSearchHighlights(Search.Results, Search.CurrentResultIndex);
-                break;
 
-            // Results were cleared (new search started or ClearSearch called).
-            case nameof(SearchViewModel.TotalResults) when Search.TotalResults == 0:
-                Viewer.ClearSearchHighlights();
-                break;
+    public async Task SaveLastPageAsync()
+    {
+        foreach (var tab in Tabs.ToList())
+            await SaveLastPageForTabAsync(tab);
+    }
+
+    private async Task SaveLastPageForTabAsync(PdfTabViewModel tab)
+    {
+        var existing = FindRecentEntry(tab.Document.FilePath, tab.Document.ContentHash);
+        if (existing is not null)
+            await _recentRepo.AddOrUpdateAsync(existing with { LastPageIndex = tab.Viewer.CurrentPageIndex });
+    }
+
+    private int FindLastPageIndex(string path, string? contentHash) =>
+        FindRecentEntry(path, contentHash)?.LastPageIndex ?? 0;
+
+    private RecentFile? FindRecentEntry(string path, string? contentHash)
+    {
+        if (contentHash is not null)
+        {
+            var byHash = RecentFiles.FirstOrDefault(r => r.ContentHash == contentHash);
+            if (byHash is not null) return byHash;
         }
+        return RecentFiles.FirstOrDefault(r =>
+            r.FilePath.Equals(path, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task RefreshRecentFilesAsync()
@@ -596,10 +677,6 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
         }
     }
 
-    /// <summary>
-    /// Returns only recent files that still exist on disk, silently removing the rest
-    /// from the repository so they never reappear.
-    /// </summary>
     private async Task<IReadOnlyList<RecentFile>> LoadAndPurgeMissingRecentFilesAsync()
     {
         var all = await _recentRepo.GetAllAsync();
@@ -613,6 +690,7 @@ public sealed partial class MainViewModel : ObservableObject, IFileDropTarget
 
         return all.Where(r => File.Exists(r.FilePath)).ToList();
     }
+
 
     private CancellationTokenSource? _statusCts;
 

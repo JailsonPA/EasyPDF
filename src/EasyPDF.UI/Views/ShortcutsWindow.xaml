@@ -38,7 +38,6 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Title bar -->
         <Grid Grid.Row="0" Background="{DynamicResource WindowChromeBrush}"
               MouseLeftButtonDown="OnTitleBarMouseDown">
             <TextBlock Text="Keyboard Shortcuts"
@@ -50,11 +49,9 @@
                     Click="CloseClick" />
         </Grid>
 
-        <!-- Content -->
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <StackPanel Margin="24,16,24,20">
 
-                <!-- FILE -->
                 <TextBlock Text="FILE" Style="{StaticResource SectionHeader}" />
                 <Grid Margin="0,0,0,14">
                     <Grid.ColumnDefinitions>
@@ -73,7 +70,6 @@
 
                 <Separator Background="{DynamicResource BorderBrush}" Margin="0,0,0,14" />
 
-                <!-- NAVIGATION -->
                 <TextBlock Text="NAVIGATION" Style="{StaticResource SectionHeader}" />
                 <Grid Margin="0,0,0,14">
                     <Grid.ColumnDefinitions>
@@ -101,7 +97,6 @@
 
                 <Separator Background="{DynamicResource BorderBrush}" Margin="0,0,0,14" />
 
-                <!-- ZOOM -->
                 <TextBlock Text="ZOOM" Style="{StaticResource SectionHeader}" />
                 <Grid Margin="0,0,0,14">
                     <Grid.ColumnDefinitions>
@@ -126,7 +121,6 @@
 
                 <Separator Background="{DynamicResource BorderBrush}" Margin="0,0,0,14" />
 
-                <!-- SEARCH -->
                 <TextBlock Text="SEARCH" Style="{StaticResource SectionHeader}" />
                 <Grid Margin="0,0,0,14">
                     <Grid.ColumnDefinitions>
@@ -151,7 +145,6 @@
 
                 <Separator Background="{DynamicResource BorderBrush}" Margin="0,0,0,14" />
 
-                <!-- EDIT & DOCUMENT -->
                 <TextBlock Text="EDIT &amp; DOCUMENT" Style="{StaticResource SectionHeader}" />
                 <Grid Margin="0,0,0,14">
                     <Grid.ColumnDefinitions>
@@ -179,7 +172,6 @@
 
                 <Separator Background="{DynamicResource BorderBrush}" Margin="0,0,0,14" />
 
-                <!-- VIEW -->
                 <TextBlock Text="VIEW" Style="{StaticResource SectionHeader}" />
                 <Grid Margin="0,0,0,0">
                     <Grid.ColumnDefinitions>
@@ -196,7 +188,6 @@
                     <TextBlock Grid.Row="1" Grid.Column="1" Text="Show this help" Style="{StaticResource DescText}" />
                 </Grid>
 
-                <!-- Close button -->
                 <Button Content="Close" Style="{DynamicResource AccentButtonStyle}"
                         HorizontalAlignment="Right" Margin="0,24,0,0"
                         Padding="20,6" Click="CloseClick" />

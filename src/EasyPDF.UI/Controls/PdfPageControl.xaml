@@ -5,53 +5,31 @@
              UseLayoutRounding="True"
              SnapsToDevicePixels="True">
     <UserControl.Resources>
-        <conv:RenderedPageToImageSourceConverter x:Key="PageConverter" />
         <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
         <conv:NullToVisibilityConverter x:Key="NullToVis" />
         <conv:NullToVisibilityConverter x:Key="NullToVisInv" Invert="True" />
+        <conv:HexToColorConverter x:Key="HexToColorConverter" />
+        <conv:DisplayPointsToPointCollectionConverter x:Key="PointsConverter" />
     </UserControl.Resources>
 
-    <!-- Outer Grid holds two layers in the same cell: shadow behind, content in front.
-         The Effect lives only on the shadow layer — it never touches page pixels.
-         Page background is hard-coded White so the app theme cannot affect PDF content. -->
+   
     <Grid Margin="8">
 
-        <!-- Layer 1 (back): shadow only. Empty border — Effect rasterises a flat
-             white rectangle, keeping the off-screen texture away from the image. -->
+       
         <Border CornerRadius="2" Background="White" IsHitTestVisible="False">
             <Border.Effect>
                 <DropShadowEffect ShadowDepth="3" BlurRadius="10" Opacity="0.35" Color="Black" />
             </Border.Effect>
         </Border>
 
-        <!-- Layer 2 (front): content. No Effect, always White — theme-independent. -->
         <Border CornerRadius="2" Background="White" ClipToBounds="True">
             <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
                 <Grid.LayoutTransform>
                     <RotateTransform Angle="{Binding Rotation}" />
                 </Grid.LayoutTransform>
 
-                <Image x:Name="PageImage"
-                       UseLayoutRounding="True"
-                       RenderOptions.BitmapScalingMode="Fant"
-                       Source="{Binding RenderedPage, Converter={StaticResource PageConverter}}"
-                       Visibility="{Binding RenderedPage, Converter={StaticResource NullToVis}}">
-                    <Image.Style>
-                        <Style TargetType="Image">
-                            <!-- Default: 1:1 pixel mapping — no WPF scaling, no blur. -->
-                            <Setter Property="Stretch" Value="None" />
-                            <Style.Triggers>
-                                <!-- While the old bitmap is stale (scale changed, fresh render pending),
-                                     stretch it to fill the new container so there's no blank flash. -->
-                                <DataTrigger Binding="{Binding IsStale}" Value="True">
-                                    <Setter Property="Stretch" Value="Uniform" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Image.Style>
-                </Image>
+                
 
-                <!-- Loading spinner shown while rendering -->
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
                             Visibility="{Binding IsRendering, Converter={StaticResource BoolToVis}}">
                     <TextBlock Text="&#x231B;" FontSize="24"
@@ -62,18 +40,38 @@
                                HorizontalAlignment="Center" />
                 </StackPanel>
 
-                <!-- Placeholder skeleton shown before first render.
-                     Always White — the SurfaceAltBrush was dark (#2D2D30) in
-                     dark mode, making the page look "darkened" while rendering. -->
+               
                 <Border Background="White"
-                        Visibility="{Binding RenderedPage, Converter={StaticResource NullToVisInv}}">
+                        Visibility="{Binding PageImage, Converter={StaticResource NullToVisInv}}">
                     <TextBlock Text="{Binding DisplayNumber}"
                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                Foreground="{DynamicResource TextDisabledBrush}"
                                FontSize="18" />
                 </Border>
 
-                <!-- Text selection overlay (blue) -->
+                <!-- Highlights / underlines são compostos direto no bitmap via BakeHighlights
+                     no PdfViewerViewModel. Nada é renderizado por overlay aqui — o data
+                     AnnotationHighlights na PageViewModel segue existindo só para hit-testing
+                     (HitTestAnnotation em PdfPageControl.xaml.cs). -->
+
+                <Image x:Name="PageImage"
+                       UseLayoutRounding="True"
+                       RenderOptions.BitmapScalingMode="Fant"
+                       Source="{Binding PageImage}"
+                       Visibility="{Binding PageImage, Converter={StaticResource NullToVis}}">
+                    <Image.Style>
+                        <Style TargetType="Image">
+                            <Setter Property="Stretch" Value="None" />
+                            <Style.Triggers>
+
+                                <DataTrigger Binding="{Binding IsStale}" Value="True">
+                                    <Setter Property="Stretch" Value="Uniform" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Image.Style>
+                </Image>
+
                 <Canvas IsHitTestVisible="False"
                         Width="{Binding BitmapWidth}"
                         Height="{Binding BitmapHeight}"
@@ -102,7 +100,6 @@
                     </ItemsControl>
                 </Canvas>
 
-                <!-- Search highlight overlay -->
                 <Canvas IsHitTestVisible="False"
                         Width="{Binding BitmapWidth}"
                         Height="{Binding BitmapHeight}"
@@ -142,7 +139,76 @@
                     </ItemsControl>
                 </Canvas>
 
-                <!-- Error overlay -->
+                <!-- Traços Ink persistidos -->
+                <Canvas IsHitTestVisible="False"
+                        Width="{Binding BitmapWidth}"
+                        Height="{Binding BitmapHeight}"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top"
+                        ClipToBounds="True">
+                    <ItemsControl ItemsSource="{Binding InkStrokes}" IsHitTestVisible="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><Canvas IsItemsHost="True" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Polyline Points="{Binding Points, Converter={StaticResource PointsConverter}}"
+                                          StrokeThickness="{Binding Thickness}"
+                                          StrokeLineJoin="Round"
+                                          StrokeStartLineCap="Round"
+                                          StrokeEndLineCap="Round"
+                                          IsHitTestVisible="False">
+                                    <Polyline.Stroke>
+                                        <SolidColorBrush Color="{Binding ColorHex,
+                                            Converter={StaticResource HexToColorConverter}}" />
+                                    </Polyline.Stroke>
+                                </Polyline>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Canvas>
+
+                <!-- Canvas de ink ativo (gerenciado pelo code-behind; Polyline adicionada dinamicamente) -->
+                <Canvas x:Name="LiveInkCanvas"
+                        IsHitTestVisible="False"
+                        Width="{Binding BitmapWidth}"
+                        Height="{Binding BitmapHeight}"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top"
+                        ClipToBounds="True" />
+
+                <!-- Notas de texto (sticky notes) -->
+                <Canvas Width="{Binding BitmapWidth}"
+                        Height="{Binding BitmapHeight}"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top"
+                        ClipToBounds="True">
+                    <ItemsControl ItemsSource="{Binding NoteAnnotations}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><Canvas IsItemsHost="True" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="Canvas.Left" Value="{Binding X}" />
+                                <Setter Property="Canvas.Top"  Value="{Binding Y}" />
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Width="28" Height="28" Cursor="Hand"
+                                        Tag="{Binding}"
+                                        ToolTip="{Binding Content}"
+                                        BorderBrush="#F59E0B" BorderThickness="1.5"
+                                        Background="#FFFDE68A" CornerRadius="4">
+                                    <TextBlock Text="📝" FontSize="14"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Canvas>
+
                 <Border Background="#AA880000" CornerRadius="2"
                         Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
                     <TextBlock Text="Failed to render page" Foreground="White"

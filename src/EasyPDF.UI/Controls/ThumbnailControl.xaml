@@ -9,17 +9,12 @@
         <conv:NullToVisibilityConverter x:Key="NullToVis" />
     </UserControl.Resources>
 
-    <!-- White background ensures the sidebar colour never bleeds into transparent
-         regions around the thumbnail (e.g. the ~6 px letter-box strips on portrait
-         A4 pages that don't fill the full 140 × 180 grid at Stretch=Uniform). -->
     <Grid Width="140" Height="180" Background="White">
-        <!-- Rendered thumbnail -->
         <Image Source="{Binding RenderedPage, Converter={StaticResource PageConverter}}"
                Stretch="Uniform"
                RenderOptions.BitmapScalingMode="HighQuality"
                Visibility="{Binding RenderedPage, Converter={StaticResource NullToVis}}" />
 
-        <!-- Skeleton placeholder shown while loading or not yet visible -->
         <Border Background="{DynamicResource SurfaceAltBrush}">
             <Border.Style>
                 <Style TargetType="Border">
@@ -37,13 +32,19 @@
                        FontSize="14" />
         </Border>
 
-        <!-- Loading indicator -->
         <TextBlock Text="&#x231B;" FontSize="16"
                    HorizontalAlignment="Center" VerticalAlignment="Center"
                    Foreground="{DynamicResource TextSecondaryBrush}"
                    Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}" />
 
-        <!-- Page number badge -->
+        <!-- Viewport indicator: blue overlay showing which portion of the page is visible in the viewer -->
+        <Rectangle x:Name="ViewportOverlay"
+                   VerticalAlignment="Top"
+                   HorizontalAlignment="Stretch"
+                   Fill="#553399FF"
+                   IsHitTestVisible="False"
+                   Visibility="Collapsed" />
+
         <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch"
                 Background="#80000000" Padding="4,2">
             <TextBlock Text="{Binding DisplayNumber}"

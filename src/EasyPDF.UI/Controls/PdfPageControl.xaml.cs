@@ -7,20 +7,13 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Shapes;
+using System.Windows.Threading;
 
 namespace EasyPDF.UI.Controls;
 
-/// <summary>
-/// Displays one PDF page. Rendering is triggered when:
-///   - The control becomes visible (IsVisibleChanged → true), OR
-///   - ViewerVm is set while the control is already visible (RelativeSource bindings resolve
-///     after the element enters the visual tree, so this fallback is critical), OR
-///   - RenderedPage is cleared (e.g. after a zoom change) while still visible.
-/// </summary>
 public partial class PdfPageControl : UserControl
 {
-    // PropertyChangedCallback ensures TriggerRender fires even when ViewerVm
-    // resolves after IsVisibleChanged (typical for RelativeSource bindings).
     public static readonly DependencyProperty ViewerVmProperty =
         DependencyProperty.Register(
             nameof(ViewerVm),
@@ -40,13 +33,37 @@ public partial class PdfPageControl : UserControl
         set => SetValue(ViewerVmProperty, value);
     }
 
+    /// Single source of truth for the highlight color palette in this control —
+    /// the right-click "Highlight" submenu and "Change color" submenu both build
+    /// themselves from this list. Adding a colour means adding one tuple here
+    /// (plus an entry in <c>AnnotationBaker</c> for the actual pixel math).
+    private static readonly (string Label, AnnotationColor Color)[] HighlightColorChoices =
+    [
+        ("Yellow", AnnotationColor.Yellow),
+        ("Green",  AnnotationColor.Green),
+        ("Pink",   AnnotationColor.Pink),
+        ("Blue",   AnnotationColor.Blue),
+        ("Red",    AnnotationColor.Red),
+    ];
+
     private CancellationTokenSource? _cts;
     private PageViewModel? _boundPage;
 
-    // Text selection state
-    private System.Windows.Point _selectionStartPdf; // in PDF point coordinates
+    private System.Windows.Point _selectionStartPdf;
     private bool _isSelecting;
     private CancellationTokenSource? _extractCts;
+    private CancellationTokenSource? _liveDragCts;
+
+    private const int DragThrottleMs = 24;
+    private DateTime _lastDragExtractAt = DateTime.MinValue;
+    private DispatcherTimer? _dragTrailingTimer;
+    private System.Windows.Point _pendingDragPosPdf;
+
+    private bool _isDrawingInk;
+    private Polyline? _livePolyline;
+
+    private const int InkThrottleMs = 10;
+    private DateTime _lastInkSampleAt = DateTime.MinValue;
 
     public PdfPageControl()
     {
@@ -55,6 +72,25 @@ public partial class PdfPageControl : UserControl
         DataContextChanged += OnDataContextChanged;
         Unloaded += OnUnloaded;
     }
+
+    // ─── Conversão de coordenadas ──────────────────────────────────────────────
+
+    /// Maps a mouse position obtained from <c>e.GetPosition(PageImage)</c> into
+    /// page-relative PDF point coordinates (origin top-left, Y-down — same convention
+    /// our annotations and quads use).
+    ///
+    /// <c>GetPosition(PageImage)</c> always returns coordinates in the Image's *local*
+    /// (pre-rotation) space — even when the parent Grid carries a <c>LayoutTransform</c>
+    /// for user-applied page rotation. So the right denominator is the un-rotated
+    /// bitmap size (<c>WidthPt * Scale</c>), NEVER <c>DisplayWidth</c>, which swaps
+    /// for 90°/270° rotations and was the source of selection breaking after rotate.
+    private static (float pdfX, float pdfY) ToPdfCoords(System.Windows.Point imagePos, PageViewModel page)
+    {
+        double scale = page.Scale > 0 ? page.Scale : 1.0;
+        return ((float)(imagePos.X / scale), (float)(imagePos.Y / scale));
+    }
+
+    // ─── DataContext / Visibility ──────────────────────────────────────────────
 
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
@@ -66,9 +102,6 @@ public partial class PdfPageControl : UserControl
         if (_boundPage is not null)
         {
             _boundPage.PropertyChanged += OnPagePropertyChanged;
-            // Recycled containers may miss the IsStale/RenderedPage=null PropertyChanged that fires
-            // during a scale change — if the DataContext swap races with OnScaleChanged.
-            // Trigger here so the page always renders when a control is assigned to it.
             if ((_boundPage.RenderedPage is null || _boundPage.IsStale) && IsVisible)
                 TriggerRender();
         }
@@ -78,7 +111,6 @@ public partial class PdfPageControl : UserControl
     {
         if (!IsVisible || _boundPage is null) return;
 
-        // Re-render when the bitmap is cleared (RenderedPage=null) or marked stale (IsStale=true).
         if (e.PropertyName == nameof(PageViewModel.RenderedPage) && _boundPage.RenderedPage is null)
             TriggerRender();
         else if (e.PropertyName == nameof(PageViewModel.IsStale) && _boundPage.IsStale)
@@ -95,26 +127,29 @@ public partial class PdfPageControl : UserControl
 
     private void TriggerRender()
     {
-        // ViewerVm may still be null if the RelativeSource binding hasn't resolved yet.
-        // OnViewerVmChanged covers that case — no action needed here.
         if (ViewerVm is null || DataContext is not PageViewModel page) return;
 
         var dpi = VisualTreeHelper.GetDpi(this);
 
-        // Render at exactly the screen's physical pixel density so the bitmap maps
-        // 1:1 to physical pixels — WPF performs no downscale and applies no blur.
-        // MuPDF AA=8 at the native scale is the sole anti-aliasing step, which
-        // gives sharper text than oversampling + Fant-downscaling ever could.
+        // physicalScale = pixels per PDF point we want in the FINAL bitmap. We pass the exact
+        // device-pixel resolution: source bitmap then maps 1:1 onto the screen with
+        // Stretch="None" — WPF does no resample at all, no Fant filter softening on top of
+        // whatever MuPDF rendered.
         //
-        // physicalScale = Scale × dpiScaleX  →  BitmapSource DPI = 96×dpiScaleX
-        // WPF logical size = pixels ÷ dpiScaleX = WidthPt×Scale  ✓ (no WPF rescaling)
+        // The render service (MuPdfRenderService.RenderCore) handles the sharp-rendering
+        // strategy internally: at low zooms it supersamples MuPDF up to ≥3.0 px/pt, then
+        // box-averages back down to physicalScale, which keeps glyph edges crisp without
+        // the Fant softening the prior pipeline had at 50/100/150% zoom. We don't need to
+        // know about that here — just request the resolution we want to display.
         //
-        // Cap at 6× (~72 MB for A4) to cover common high-DPI scenarios without
-        // upscaling: 150% DPI × Scale≈3.2 (full-HD maximised) and 200% DPI × Scale≈3.0
-        // both stay within 6× and remain 1:1. Only extreme zoom on 200%+ DPI screens
-        // slightly exceeds the cap and WPF upscales via Fant — acceptable at that zoom.
-        const double MaxPhysicalScale = 6.0;
-        double renderDpiScale = Math.Min(dpi.DpiScaleX, MaxPhysicalScale / Math.Max(ViewerVm.Scale, 0.001));
+        // Cap (MaxPhysicalScale): keep bitmap memory bounded at extreme zoom on Hi-DPI.
+        const double MaxPhysicalScale = 8.0;
+
+        double effectiveScale = Math.Max(ViewerVm.Scale, 0.001);
+        double nativePhysical = effectiveScale * dpi.DpiScaleX;
+        double physicalScale  = Math.Min(nativePhysical, MaxPhysicalScale);
+
+        double renderDpiScale = physicalScale / effectiveScale;
 
         _cts?.Cancel();
         _cts = new CancellationTokenSource();
@@ -130,14 +165,56 @@ public partial class PdfPageControl : UserControl
         _cts?.Dispose();
         _extractCts?.Cancel();
         _extractCts?.Dispose();
+        _liveDragCts?.Cancel();
+        _liveDragCts?.Dispose();
+
+        if (_dragTrailingTimer is not null)
+        {
+            _dragTrailingTimer.Stop();
+            _dragTrailingTimer.Tick -= OnDragTrailingTick;
+            _dragTrailingTimer = null;
+        }
     }
 
-    // ─── Link support ──────────────────────────────────────────────────────────
+    // ─── Hit testing ──────────────────────────────────────────────────────────
+
+    private static NoteAnnotationViewModel? FindNoteVm(DependencyObject? element)
+    {
+        while (element is not null)
+        {
+            if (element is FrameworkElement fe && fe.Tag is NoteAnnotationViewModel vm)
+                return vm;
+            element = VisualTreeHelper.GetParent(element);
+        }
+        return null;
+    }
+
+    private static AnnotationHighlightRect? HitTestAnnotation(PageViewModel page, System.Windows.Point imagePos)
+    {
+        foreach (var ann in page.AnnotationHighlights)
+        {
+            if (imagePos.X >= ann.X && imagePos.X <= ann.X + ann.Width &&
+                imagePos.Y >= ann.Y && imagePos.Y <= ann.Y + ann.Height)
+                return ann;
+        }
+        return null;
+    }
+
+    private static NoteAnnotationViewModel? HitTestNote(PageViewModel page, System.Windows.Point imagePos)
+    {
+        const double noteSize = 28.0;
+        foreach (var note in page.NoteAnnotations)
+        {
+            if (imagePos.X >= note.X && imagePos.X <= note.X + noteSize &&
+                imagePos.Y >= note.Y && imagePos.Y <= note.Y + noteSize)
+                return note;
+        }
+        return null;
+    }
 
     private static PdfLink? HitTestLink(PageViewModel page, System.Windows.Point imagePos)
     {
-        double pdfX = imagePos.X / page.Scale;
-        double pdfY = imagePos.Y / page.Scale;
+        var (pdfX, pdfY) = ToPdfCoords(imagePos, page);
         foreach (var link in page.Links)
         {
             var a = link.Area;
@@ -162,20 +239,19 @@ public partial class PdfPageControl : UserControl
         }
     }
 
-    // ─── Context menu (right-click) ────────────────────────────────────────────
+    // ─── Context menu ──────────────────────────────────────────────────────────
 
     protected override void OnMouseRightButtonDown(MouseButtonEventArgs e)
     {
         base.OnMouseRightButtonDown(e);
         if (ViewerVm is null || DataContext is not PageViewModel page) return;
 
-        var pos  = e.GetPosition(PageImage);
+        var pos = e.GetPosition(PageImage);
         var link = HitTestLink(page, pos);
         bool hasText = !string.IsNullOrEmpty(ViewerVm.SelectedText);
 
         var menu = new ContextMenu();
 
-        // Copy text — always visible; disabled when nothing is selected.
         var copyItem = new MenuItem
         {
             Header = "Copy text",
@@ -189,7 +265,6 @@ public partial class PdfPageControl : UserControl
         };
         menu.Items.Add(copyItem);
 
-        // Copy page as image — always visible; renders at 150 DPI into the clipboard.
         var copyImageItem = new MenuItem { Header = "Copy page as image" };
         copyImageItem.Click += async (_, _) =>
         {
@@ -204,7 +279,78 @@ public partial class PdfPageControl : UserControl
         };
         menu.Items.Add(copyImageItem);
 
-        // Link actions — only when the cursor is over a link.
+        if (hasText)
+        {
+            menu.Items.Add(new Separator());
+
+            var highlightMenu = new MenuItem { Header = "Highlight" };
+            foreach (var (label, color) in HighlightColorChoices)
+            {
+                var item = new MenuItem { Header = label };
+                var capturedColor = color;
+                item.Click += async (_, _) =>
+                    await ViewerVm.AddAnnotationAsync(AnnotationType.Highlight, capturedColor);
+                highlightMenu.Items.Add(item);
+            }
+            menu.Items.Add(highlightMenu);
+
+            var underlineItem = new MenuItem { Header = "Underline" };
+            underlineItem.Click += async (_, _) =>
+                await ViewerVm.AddAnnotationAsync(AnnotationType.Underline, AnnotationColor.Yellow);
+            menu.Items.Add(underlineItem);
+        }
+
+        var annotation = HitTestAnnotation(page, pos);
+        if (annotation is not null)
+        {
+            menu.Items.Add(new Separator());
+
+            var changeColorItem = new MenuItem { Header = "Change color" };
+            foreach (var (label, color) in HighlightColorChoices)
+            {
+                var sub = new MenuItem
+                {
+                    Header = label,
+                    IsCheckable = true,
+                    IsChecked = annotation.Color == color,
+                    StaysOpenOnClick = false,
+                };
+                var capturedColor = color;
+                var capturedId = annotation.Id;
+                sub.Click += async (_, _) => await ViewerVm.ChangeAnnotationColorAsync(capturedId, capturedColor);
+                changeColorItem.Items.Add(sub);
+            }
+            menu.Items.Add(changeColorItem);
+
+            var removeItem = new MenuItem { Header = "Remove annotation" };
+            var id = annotation.Id;
+            removeItem.Click += async (_, _) => await ViewerVm.RemoveAnnotationAsync(id);
+            menu.Items.Add(removeItem);
+        }
+
+        var note = HitTestNote(page, pos);
+        if (note is not null)
+        {
+            menu.Items.Add(new Separator());
+
+            var editNoteItem = new MenuItem { Header = "Editar nota" };
+            var capturedNote = note;
+            editNoteItem.Click += async (_, _) =>
+            {
+                var dialog = new EasyPDF.UI.Services.PromptWindow(
+                    "Editar Nota", "Conteúdo da nota:", capturedNote.Content)
+                { Owner = Window.GetWindow(this) };
+                if (dialog.ShowDialog() == true && dialog.Value != capturedNote.Content)
+                    await ViewerVm.EditNoteAsync(capturedNote.Id, dialog.Value ?? capturedNote.Content);
+            };
+            menu.Items.Add(editNoteItem);
+
+            var removeNoteItem = new MenuItem { Header = "Remover nota" };
+            var noteId = note.Id;
+            removeNoteItem.Click += async (_, _) => await ViewerVm.RemoveAnnotationAsync(noteId);
+            menu.Items.Add(removeNoteItem);
+        }
+
         if (link.HasValue)
         {
             menu.Items.Add(new Separator());
@@ -233,17 +379,80 @@ public partial class PdfPageControl : UserControl
         e.Handled = true;
     }
 
-    // ─── Text selection ────────────────────────────────────────────────────────
+    // ─── Mouse: selecção de texto, ink, notas ─────────────────────────────────
 
-    protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
+    protected override async void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonDown(e);
         if (ViewerVm is null || DataContext is not PageViewModel page) return;
 
-        var pos = e.GetPosition(PageImage);
-        if (pos.X < 0 || pos.Y < 0 || pos.X > page.DisplayWidth || pos.Y > page.DisplayHeight) return;
+        var noteVm = FindNoteVm(e.OriginalSource as DependencyObject);
+        if (noteVm is not null)
+        {
+            var dialog = new EasyPDF.UI.Services.PromptWindow(
+                "Ver / Editar Nota", "Conteúdo da nota:", noteVm.Content)
+            { Owner = Window.GetWindow(this) };
+            if (dialog.ShowDialog() == true && dialog.Value != noteVm.Content)
+                await ViewerVm.EditNoteAsync(noteVm.Id, dialog.Value ?? noteVm.Content);
+            e.Handled = true;
+            return;
+        }
 
-        // Link click takes priority over text selection.
+        var pos = e.GetPosition(PageImage);
+        // GetPosition returns pre-rotation (bitmap-local) coords — compare against
+        // BitmapWidth/Height, not DisplayWidth/Height (which swap for 90°/270°).
+        if (pos.X < 0 || pos.Y < 0 || pos.X > page.BitmapWidth || pos.Y > page.BitmapHeight) return;
+
+        // ── Eraser ────────────────────────────────────────────────────────────
+        if (ViewerVm.CurrentEditMode == EditMode.Eraser)
+        {
+            const double threshold = 15.0;
+            var nearest = page.InkStrokes
+                .FirstOrDefault(s => s.Points.Any(p =>
+                    (p.X - pos.X) * (p.X - pos.X) + (p.Y - pos.Y) * (p.Y - pos.Y)
+                    < threshold * threshold));
+            if (nearest is not null)
+                await ViewerVm.RemoveAnnotationAsync(nearest.Id);
+            e.Handled = true;
+            return;
+        }
+
+        // ── Ink ───────────────────────────────────────────────────────────────
+        if (ViewerVm.CurrentEditMode == EditMode.Ink)
+        {
+            var (inkX, inkY) = ToPdfCoords(pos, page);
+            ViewerVm.BeginInkStroke(page, inkX, inkY);
+            _isDrawingInk = true;
+
+            _livePolyline = new Polyline
+            {
+                StrokeThickness = ViewerVm.InkThickness,
+                StrokeLineJoin = PenLineJoin.Round,
+                Stroke = new SolidColorBrush(
+                    (Color)ColorConverter.ConvertFromString(ViewerVm.InkColor)!),
+            };
+            _livePolyline.Points.Add(pos);
+            LiveInkCanvas.Children.Add(_livePolyline);
+
+            CaptureMouse();
+            e.Handled = true;
+            return;
+        }
+
+        // ── Note ──────────────────────────────────────────────────────────────
+        if (ViewerVm.CurrentEditMode == EditMode.Note)
+        {
+            var (noteX, noteY) = ToPdfCoords(pos, page);
+            var prompt = new EasyPDF.UI.Services.PromptWindow(
+                "Nova Anotação", "Texto da nota", "")
+            { Owner = Window.GetWindow(this) };
+            if (prompt.ShowDialog() == true && !string.IsNullOrWhiteSpace(prompt.Value))
+                await ViewerVm.AddNoteAtPointAsync(page, noteX, noteY, prompt.Value);
+            e.Handled = true;
+            return;
+        }
+
+        // ── Link ──────────────────────────────────────────────────────────────
         var link = HitTestLink(page, pos);
         if (link is not null)
         {
@@ -252,8 +461,30 @@ public partial class PdfPageControl : UserControl
             return;
         }
 
+        // ── Double / triple click ─────────────────────────────────────────────
+        if (e.ClickCount >= 2)
+        {
+            ViewerVm.ClearSelection();
+            _isSelecting = false;
+
+            _extractCts?.Cancel();
+            _extractCts = new CancellationTokenSource();
+
+            var unit = e.ClickCount >= 3
+                ? EasyPDF.Core.Interfaces.TextSelectionUnit.Line
+                : EasyPDF.Core.Interfaces.TextSelectionUnit.Word;
+
+            var (px, py) = ToPdfCoords(pos, page);
+            await ViewerVm.ExtractAtPointAsync(page, px, py, unit, _extractCts.Token);
+
+            e.Handled = true;
+            return;
+        }
+
+        // ── Selecção por drag ─────────────────────────────────────────────────
         ViewerVm.ClearSelection();
-        _selectionStartPdf = new System.Windows.Point(pos.X / page.Scale, pos.Y / page.Scale);
+        var (sx, sy) = ToPdfCoords(pos, page);
+        _selectionStartPdf = new System.Windows.Point(sx, sy);
         _isSelecting = true;
         CaptureMouse();
         e.Handled = true;
@@ -266,38 +497,133 @@ public partial class PdfPageControl : UserControl
 
         var pos = e.GetPosition(PageImage);
 
-        if (!_isSelecting)
+        // ── Ink ───────────────────────────────────────────────────────────────
+        if (_isDrawingInk && ViewerVm is not null)
         {
-            Cursor = HitTestLink(page, pos) is not null ? Cursors.Hand : Cursors.IBeam;
+            var nowInk = DateTime.UtcNow;
+            if ((nowInk - _lastInkSampleAt).TotalMilliseconds < InkThrottleMs)
+            {
+                e.Handled = true;
+                return;
+            }
+            _lastInkSampleAt = nowInk;
+
+            var (mx, my) = ToPdfCoords(pos, page);
+            double pdfX = Math.Clamp(mx, 0, page.WidthPt);
+            double pdfY = Math.Clamp(my, 0, page.HeightPt);
+            ViewerVm.ContinueInkStroke(page, pdfX, pdfY);
+            _livePolyline?.Points.Add(pos);
+            e.Handled = true;
             return;
         }
 
-        double ex = Math.Clamp(pos.X / page.Scale, 0, page.WidthPt);
-        double ey = Math.Clamp(pos.Y / page.Scale, 0, page.HeightPt);
+        if (!_isSelecting)
+        {
+            Cursor = ViewerVm?.CurrentEditMode switch
+            {
+                EditMode.Ink => Cursors.Pen,
+                EditMode.Note => Cursors.Cross,
+                EditMode.Eraser => Cursors.Cross,
+                _ => HitTestLink(page, pos) is not null ? Cursors.Hand : Cursors.IBeam,
+            };
+            return;
+        }
 
-        // Live bounding-box feedback while dragging
-        double rx = Math.Min(_selectionStartPdf.X, ex) * page.Scale;
-        double ry = Math.Min(_selectionStartPdf.Y, ey) * page.Scale;
-        double rw = Math.Abs(ex - _selectionStartPdf.X) * page.Scale;
-        double rh = Math.Abs(ey - _selectionStartPdf.Y) * page.Scale;
+        var (ex, ey) = ToPdfCoords(pos, page);
+        double clampedX = Math.Clamp(ex, 0, page.WidthPt);
+        double clampedY = Math.Clamp(ey, 0, page.HeightPt);
+        _pendingDragPosPdf = new System.Windows.Point(clampedX, clampedY);
 
-        page.SelectionHighlights = [new HighlightRect(rx, ry, rw, rh, false)];
+        var now = DateTime.UtcNow;
+        if ((now - _lastDragExtractAt).TotalMilliseconds >= DragThrottleMs)
+        {
+            FireLiveDragExtract(page);
+        }
+        else
+        {
+            _dragTrailingTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(DragThrottleMs) };
+            _dragTrailingTimer.Tick -= OnDragTrailingTick;
+            _dragTrailingTimer.Tick += OnDragTrailingTick;
+            _dragTrailingTimer.Stop();
+            _dragTrailingTimer.Start();
+        }
+    }
+
+    private void OnDragTrailingTick(object? sender, EventArgs e)
+    {
+        _dragTrailingTimer?.Stop();
+        if (!_isSelecting || DataContext is not PageViewModel page) return;
+        FireLiveDragExtract(page);
+    }
+
+    private void FireLiveDragExtract(PageViewModel page)
+    {
+        if (ViewerVm is null) return;
+        _lastDragExtractAt = DateTime.UtcNow;
+        _liveDragCts?.Cancel();
+        _liveDragCts = new CancellationTokenSource();
+        LiveExtractAsync(page,
+            (float)_selectionStartPdf.X, (float)_selectionStartPdf.Y,
+            (float)_pendingDragPosPdf.X, (float)_pendingDragPosPdf.Y,
+            _liveDragCts.Token);
+    }
+
+    private async void LiveExtractAsync(
+        PageViewModel page,
+        float startX, float startY,
+        float endX, float endY,
+        CancellationToken ct)
+    {
+        try
+        {
+            if (ViewerVm is null) return;
+            await ViewerVm.ExtractSelectionAsync(page, startX, startY, endX, endY, ct);
+        }
+        catch (OperationCanceledException) { }
     }
 
     protected override async void OnMouseLeftButtonUp(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonUp(e);
+
+        // ── Ink ───────────────────────────────────────────────────────────────
+        if (_isDrawingInk && DataContext is PageViewModel inkPage && ViewerVm is not null)
+        {
+            _isDrawingInk = false;
+            ReleaseMouseCapture();
+
+            var upPos = e.GetPosition(PageImage);
+            var (fx, fy) = ToPdfCoords(upPos, inkPage);
+            double finalX = Math.Clamp(fx, 0, inkPage.WidthPt);
+            double finalY = Math.Clamp(fy, 0, inkPage.HeightPt);
+            ViewerVm.ContinueInkStroke(inkPage, finalX, finalY);
+
+            if (_livePolyline is not null)
+            {
+                LiveInkCanvas.Children.Remove(_livePolyline);
+                _livePolyline = null;
+            }
+
+            await ViewerVm.CommitInkStrokeAsync(inkPage);
+            e.Handled = true;
+            return;
+        }
+
         if (!_isSelecting || DataContext is not PageViewModel page || ViewerVm is null) return;
 
         _isSelecting = false;
         ReleaseMouseCapture();
 
-        var pos  = e.GetPosition(PageImage);
-        double ex = Math.Clamp(pos.X / page.Scale, 0, page.WidthPt);
-        double ey = Math.Clamp(pos.Y / page.Scale, 0, page.HeightPt);
+        _dragTrailingTimer?.Stop();
+        _liveDragCts?.Cancel();
+        _liveDragCts = null;
 
-        // Tiny movement = click without drag → clear selection
-        if (Math.Abs(ex - _selectionStartPdf.X) < 3 && Math.Abs(ey - _selectionStartPdf.Y) < 3)
+        var pos = e.GetPosition(PageImage);
+        var (ux, uy) = ToPdfCoords(pos, page);
+        double finalEx = Math.Clamp(ux, 0, page.WidthPt);
+        double finalEy = Math.Clamp(uy, 0, page.HeightPt);
+
+        if (Math.Abs(finalEx - _selectionStartPdf.X) < 3 && Math.Abs(finalEy - _selectionStartPdf.Y) < 3)
         {
             page.SelectionHighlights = [];
             ViewerVm.ClearSelection();
@@ -311,7 +637,7 @@ public partial class PdfPageControl : UserControl
         await ViewerVm.ExtractSelectionAsync(
             page,
             (float)_selectionStartPdf.X, (float)_selectionStartPdf.Y,
-            (float)ex, (float)ey,
+            (float)finalEx, (float)finalEy,
             _extractCts.Token);
 
         e.Handled = true;

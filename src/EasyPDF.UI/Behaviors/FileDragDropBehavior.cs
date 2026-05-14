@@ -4,9 +4,6 @@ using System.Windows;
 
 namespace EasyPDF.UI.Behaviors;
 
-/// <summary>
-/// Handles PDF file drag-and-drop onto any UIElement whose DataContext implements IFileDropTarget.
-/// </summary>
 public sealed class FileDragDropBehavior : Behavior<UIElement>
 {
     protected override void OnAttached()
@@ -38,10 +35,6 @@ public sealed class FileDragDropBehavior : Behavior<UIElement>
         if ((sender as FrameworkElement)?.DataContext is not IFileDropTarget target)
             return;
 
-        // async void is required for WPF event handlers. Without try/catch, any exception
-        // thrown after the first await would bypass all callers and surface as an unhandled
-        // dispatcher exception. DropFileAsync handles expected errors internally; this guard
-        // catches the unexpected ones so the user gets a clear message rather than a crash dialog.
         try
         {
             await target.DropFileAsync(files[0]);

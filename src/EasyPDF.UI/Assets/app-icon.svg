@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  EasyPDF — master brand icon (v2: dark premium).
+  Rounded-square container in graphite gradient + white "E" + red folded-corner accent.
+  Master grid: 1024 x 1024. Container radius: 224. Inner safe area: 576 x 576 (padding 224).
+  Raster assets (app.ico, app-256.png) are generated from this geometry —
+  do not edit those by hand.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1F1F1F"/>
+      <stop offset="1" stop-color="#0A0A0A"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224" fill="url(#bg)"/>
+
+  <g transform="translate(102.4 102.4) scale(0.8)">
+    <path d="M 152 152 L 752 152 L 872 272 L 272 272 L 272 446 L 632 446 L 632 566 L 272 566 L 272 752 L 872 752 L 872 872 L 152 872 Z"
+          fill="#FFFFFF"/>
+    <path d="M 752 152 L 872 152 L 872 272 Z"
+          fill="#DC2626"/>
+  </g>
+</svg>

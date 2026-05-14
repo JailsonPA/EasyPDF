@@ -10,37 +10,70 @@
         <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
     </UserControl.Resources>
 
-    <ScrollViewer x:Name="MainScroller"
-                  HorizontalScrollBarVisibility="Auto"
-                  VerticalScrollBarVisibility="Auto"
-                  CanContentScroll="True"
-                  PanningMode="Both"
-                  Background="Transparent"
-                  ScrollChanged="MainScroller_ScrollChanged">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
-        <ItemsControl x:Name="PageList"
-                      ItemsSource="{Binding Pages}"
-                      HorizontalAlignment="Center"
-                      VirtualizingPanel.IsVirtualizing="True"
-                      VirtualizingPanel.VirtualizationMode="Recycling"
-                      VirtualizingPanel.ScrollUnit="Pixel">
+        <!-- Banner shown when the PDF has no extractable text layer (scanned image-only or
+             vector-outlined PDFs such as Canva exports). Selection / search / highlights
+             cannot work on these without OCR, so the banner makes the limitation explicit. -->
+        <Border Grid.Row="0"
+                Visibility="{Binding IsTextLayerMissing, Converter={StaticResource BoolToVis}}"
+                Background="#33F59E0B"
+                BorderBrush="#FFF59E0B"
+                BorderThickness="0,0,0,1"
+                Padding="14,8">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="&#xE7BA;"
+                           FontFamily="Segoe MDL2 Assets"
+                           FontSize="14"
+                           Margin="0,0,10,0"
+                           VerticalAlignment="Center"
+                           Foreground="#FFF59E0B" />
+                <TextBlock VerticalAlignment="Center"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextPrimaryBrush}">
+                    <Run FontWeight="SemiBold" Text="This PDF has no text layer." />
+                    <Run Text=" Selection, search and highlights are not available — it appears to be a scanned image or a vector-outlined export (e.g. Canva). OCR is required to make the text selectable." />
+                </TextBlock>
+            </StackPanel>
+        </Border>
 
-            <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                    <VirtualizingStackPanel Orientation="Vertical" />
-                </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
+        <ScrollViewer Grid.Row="1"
+                      x:Name="MainScroller"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Auto"
+                      CanContentScroll="True"
+                      PanningMode="Both"
+                      Background="Transparent"
+                      ScrollChanged="MainScroller_ScrollChanged">
 
-            <ItemsControl.ItemTemplate>
-                <DataTemplate DataType="{x:Type vm:PageViewModel}">
-                    <ctrl:PdfPageControl
-                        DataContext="{Binding}"
-                        ViewerVm="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                        Width="{Binding ControlWidth}"
-                        Height="{Binding ControlHeight}"
-                        Margin="0,4" />
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
-    </ScrollViewer>
+            <ItemsControl x:Name="PageList"
+                          ItemsSource="{Binding Pages}"
+                          HorizontalAlignment="Center"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling"
+                          VirtualizingPanel.ScrollUnit="Pixel">
+
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel Orientation="Vertical" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:PageViewModel}">
+                        <ctrl:PdfPageControl
+                            DataContext="{Binding}"
+                            ViewerVm="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                            Width="{Binding ControlWidth}"
+                            Height="{Binding ControlHeight}"
+                            Margin="0,4" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </Grid>
 </UserControl>

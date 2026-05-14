@@ -11,7 +11,18 @@ public sealed partial class SearchViewModel : ObservableObject
 {
     private readonly ISearchService _searchService;
     private readonly ILogger<SearchViewModel> _logger;
+    private readonly IPreferencesRepository _prefsRepo;
     private CancellationTokenSource? _searchCts;
+
+    // Skips persistence while the constructor seeds CaseSensitive from saved prefs —
+    // otherwise the field assignment would immediately echo the loaded value back to disk.
+    private bool _suppressPrefsPersistence = true;
+
+    private sealed class NoOpPreferences : IPreferencesRepository
+    {
+        public UserPreferences Get() => new();
+        public Task SaveAsync(UserPreferences prefs, CancellationToken ct = default) => Task.CompletedTask;
+    }
 
     [ObservableProperty]
     private string _query = string.Empty;
@@ -24,7 +35,6 @@ public sealed partial class SearchViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CurrentResultDisplay))]
     private int _currentResultIndex = -1;
 
-    /// <summary>1-based index for display (0 when no result is active yet).</summary>
     public int CurrentResultDisplay => CurrentResultIndex < 0 ? 0 : CurrentResultIndex + 1;
 
     [ObservableProperty]
@@ -36,7 +46,6 @@ public sealed partial class SearchViewModel : ObservableObject
     [ObservableProperty]
     private int _searchProgress;
 
-    /// <summary>Total pages in the current document — used as Maximum for the search progress bar.</summary>
     [ObservableProperty]
     private int _totalPages;
 
@@ -45,10 +54,26 @@ public sealed partial class SearchViewModel : ObservableObject
 
     public event EventHandler<SearchResult>? ResultNavigateRequested;
 
-    public SearchViewModel(ISearchService searchService, ILogger<SearchViewModel> logger)
+    public SearchViewModel(
+        ISearchService searchService,
+        ILogger<SearchViewModel> logger,
+        IPreferencesRepository? prefsRepo = null)
     {
         _searchService = searchService;
         _logger = logger;
+        _prefsRepo = prefsRepo ?? new NoOpPreferences();
+
+        // Seed from saved prefs via the backing field so the change handler doesn't run.
+        _caseSensitive = _prefsRepo.Get().SearchCaseSensitive;
+        _suppressPrefsPersistence = false;
+    }
+
+    partial void OnCaseSensitiveChanged(bool value)
+    {
+        if (_suppressPrefsPersistence) return;
+        var current = _prefsRepo.Get();
+        if (current.SearchCaseSensitive == value) return;
+        _ = _prefsRepo.SaveAsync(current with { SearchCaseSensitive = value });
     }
 
     [RelayCommand]

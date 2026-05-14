@@ -14,6 +14,9 @@ public partial class MainWindow : Window
     private HwndSource? _hwndSource;
     private GridLength _savedSidebarWidth = new GridLength(260);
 
+
+    private Rect? _maxRestoreButtonScreenRect;
+
     public MainWindow(MainViewModel vm)
     {
         InitializeComponent();
@@ -46,14 +49,19 @@ public partial class MainWindow : Window
         }
     }
 
-    protected override async void OnSourceInitialized(EventArgs e)
+    protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
         _hwndSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
         _hwndSource?.AddHook(WndProc);
         ApplySavedPlacement();
         UpdateSidebarLayout();
-        await _vm.InitializeAsync();
+
+
+        SizeChanged       += (_, _) => _maxRestoreButtonScreenRect = null;
+        StateChanged      += (_, _) => _maxRestoreButtonScreenRect = null;
+        MaxRestoreButton.SizeChanged += (_, _) => _maxRestoreButtonScreenRect = null;
+        // InitializeAsync now runs from App.OnStartup before Show(), so no work is needed here.
     }
 
     protected override void OnClosed(EventArgs e)
@@ -128,11 +136,7 @@ public partial class MainWindow : Window
         });
     }
 
-    // ─── Windows 11 Snap Layout support ────────────────────────────────────────
-    // With WindowStyle="None" the OS has no maximize button to detect, so the
-    // Snap Layout popup never appears on hover. We intercept WM_NCHITTEST and
-    // return HTMAXBUTTON when the cursor is over MaxRestoreButton, which tells
-    // the OS to treat that region as the native maximize button.
+
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
@@ -143,14 +147,12 @@ public partial class MainWindow : Window
             int screenY = unchecked((short)((lParam.ToInt32() >> 16) & 0xFFFF));
             var cursorScreen = new Point(screenX, screenY);
 
-            // Convert both corners via PointToScreen so the Rect is in physical
-            // pixels — same coordinate space as the lParam cursor position.
-            // Using PointToScreen for both points is DPI-correct at any scale.
-            var topLeft     = MaxRestoreButton.PointToScreen(new Point(0, 0));
-            var bottomRight = MaxRestoreButton.PointToScreen(
-                new Point(MaxRestoreButton.ActualWidth, MaxRestoreButton.ActualHeight));
 
-            if (new Rect(topLeft, bottomRight).Contains(cursorScreen))
+            var rect = _maxRestoreButtonScreenRect ??= new Rect(
+                MaxRestoreButton.PointToScreen(new Point(0, 0)),
+                MaxRestoreButton.PointToScreen(new Point(MaxRestoreButton.ActualWidth, MaxRestoreButton.ActualHeight)));
+
+            if (rect.Contains(cursorScreen))
             {
                 handled = true;
                 return new IntPtr(NativeMethods.HTMAXBUTTON);
@@ -158,16 +160,11 @@ public partial class MainWindow : Window
         }
         else if (msg == NativeMethods.WM_NCLBUTTONDOWN && wParam.ToInt32() == NativeMethods.HTMAXBUTTON)
         {
-            // Block DefWindowProc from posting WM_SYSCOMMAND SC_MAXIMIZE to the
-            // message queue. If allowed through, it would toggle the window BEFORE
-            // WM_NCLBUTTONUP fires, and our handler below would toggle it back —
-            // net result: no visible change. Suppress here; act on the Up event.
+           
             handled = true;
         }
         else if (msg == NativeMethods.WM_NCLBUTTONUP && wParam.ToInt32() == NativeMethods.HTMAXBUTTON)
         {
-            // HTMAXBUTTON promotes this area to non-client space, so Windows never
-            // delivers WM_LBUTTONUP to the WPF button. Toggle here instead.
             ToggleMaximize();
             handled = true;
         }
@@ -222,25 +219,29 @@ public partial class MainWindow : Window
         {
             // ── Page navigation (not when typing) ─────────────────────────
             case Key.Left or Key.PageUp when _vm.HasDocument && !inText:
-                viewer.PreviousPageCommand.Execute(null);
+                viewer?.PreviousPageCommand.Execute(null);
                 e.Handled = true;
                 break;
             case Key.Right or Key.PageDown when _vm.HasDocument && !inText:
-                viewer.NextPageCommand.Execute(null);
+                viewer?.NextPageCommand.Execute(null);
                 e.Handled = true;
                 break;
             case Key.Home when _vm.HasDocument && !inText:
-                viewer.FirstPageCommand.Execute(null);
+                viewer?.FirstPageCommand.Execute(null);
                 e.Handled = true;
                 break;
             case Key.End when _vm.HasDocument && !inText:
-                viewer.LastPageCommand.Execute(null);
+                viewer?.LastPageCommand.Execute(null);
                 e.Handled = true;
                 break;
 
-            // ── Dismiss search panel (SearchBoxKeyDown handles the in-box case) ──
+            // ── Sai do modo de edição (ou fecha busca) ────────────────────────
             case Key.Escape when _vm.IsSearchPanelOpen && !inText:
                 _vm.ToggleSearchCommand.Execute(null);
+                e.Handled = true;
+                break;
+            case Key.Escape when _vm.Viewer?.CurrentEditMode != EditMode.None && !inText:
+                _vm.Viewer?.SetEditModeCommand.Execute(EditMode.None);
                 e.Handled = true;
                 break;
 
@@ -251,7 +252,7 @@ public partial class MainWindow : Window
                 break;
             case Key.W when Keyboard.Modifiers == ModifierKeys.Control:
                 if (_vm.HasDocument)
-                    _vm.CloseDocumentCommand.Execute(null);
+                    _vm.CloseTabCommand.Execute(null);
                 else
                     Close();
                 e.Handled = true;
@@ -267,7 +268,7 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
             // F3 / Shift+F3: cycle through existing results without reopening search.
-            case Key.F3 when _vm.Search.HasResults:
+            case Key.F3 when _vm.Search?.HasResults == true:
                 if (Keyboard.Modifiers == ModifierKeys.Shift)
                     _vm.Search.PreviousResultCommand.Execute(null);
                 else
@@ -288,6 +289,18 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
 
+            // ── Undo / Redo ───────────────────────────────────────────────
+            // Ctrl+Z = undo; Ctrl+Y or Ctrl+Shift+Z = redo (covers both conventions).
+            case Key.Z when Keyboard.Modifiers == ModifierKeys.Control && _vm.HasDocument:
+                _vm.UndoCommand.Execute(null);
+                e.Handled = true;
+                break;
+            case Key.Z when Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift) && _vm.HasDocument:
+            case Key.Y when Keyboard.Modifiers == ModifierKeys.Control && _vm.HasDocument:
+                _vm.RedoCommand.Execute(null);
+                e.Handled = true;
+                break;
+
             // ── Print ─────────────────────────────────────────────────────
             case Key.P when Keyboard.Modifiers == ModifierKeys.Control && _vm.HasDocument:
                 _vm.PrintCommand.Execute(null);
@@ -296,11 +309,11 @@ public partial class MainWindow : Window
 
             // ── Page rotation ─────────────────────────────────────────────
             case Key.OemOpenBrackets when Keyboard.Modifiers == ModifierKeys.Control && _vm.HasDocument:
-                _vm.Viewer.RotateCurrentPageCounterClockwiseCommand.Execute(null);
+                _vm.Viewer?.RotateCurrentPageCounterClockwiseCommand.Execute(null);
                 e.Handled = true;
                 break;
             case Key.OemCloseBrackets when Keyboard.Modifiers == ModifierKeys.Control && _vm.HasDocument:
-                _vm.Viewer.RotateCurrentPageClockwiseCommand.Execute(null);
+                _vm.Viewer?.RotateCurrentPageClockwiseCommand.Execute(null);
                 e.Handled = true;
                 break;
 
@@ -316,26 +329,32 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
 
+            // ── Export PDF com anotações ──────────────────────────────────
+            case Key.E when Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift) && _vm.HasDocument:
+                _vm.ExportAnnotatedPdfCommand.Execute(null);
+                e.Handled = true;
+                break;
+
             // ── Copy selected text ────────────────────────────────────────
             case Key.C when Keyboard.Modifiers == ModifierKeys.Control:
-                if (!string.IsNullOrEmpty(_vm.Viewer.SelectedText))
+                if (!string.IsNullOrEmpty(_vm.Viewer?.SelectedText))
                 {
-                    System.Windows.Clipboard.SetText(_vm.Viewer.SelectedText);
+                    System.Windows.Clipboard.SetText(_vm.Viewer.SelectedText!);
                     e.Handled = true;
                 }
                 break;
 
             // ── Zoom ──────────────────────────────────────────────────────
             case Key.Add or Key.OemPlus when Keyboard.Modifiers == ModifierKeys.Control:
-                viewer.ZoomInCommand.Execute(null);
+                viewer?.ZoomInCommand.Execute(null);
                 e.Handled = true;
                 break;
             case Key.Subtract or Key.OemMinus when Keyboard.Modifiers == ModifierKeys.Control:
-                viewer.ZoomOutCommand.Execute(null);
+                viewer?.ZoomOutCommand.Execute(null);
                 e.Handled = true;
                 break;
             case Key.D0 or Key.NumPad0 when Keyboard.Modifiers == ModifierKeys.Control:
-                viewer.ResetZoomCommand.Execute(null);
+                viewer?.ResetZoomCommand.Execute(null);
                 e.Handled = true;
                 break;
         }
@@ -349,7 +368,7 @@ public partial class MainWindow : Window
         if (sender is System.Windows.Controls.TextBox tb &&
             int.TryParse(tb.Text, out int page))
         {
-            _vm.Viewer.GoToPageCommand.Execute(page - 1);
+            _vm.Viewer?.GoToPageCommand.Execute(page - 1);
         }
         e.Handled = true;
     }
@@ -367,7 +386,7 @@ public partial class MainWindow : Window
         {
             string raw = text.TrimEnd('%').Trim();
             if (double.TryParse(raw, out double pct))
-                _vm.Viewer.ZoomToCommand.Execute(pct);
+                _vm.Viewer?.ZoomToCommand.Execute(pct);
         }
         e.Handled = true;
     }
@@ -379,10 +398,9 @@ public partial class MainWindow : Window
 
         string raw = item.Content?.ToString()?.TrimEnd('%').Trim() ?? "";
         if (double.TryParse(raw, out double pct))
-            _vm.Viewer.ZoomToCommand.Execute(pct);
+            _vm.Viewer?.ZoomToCommand.Execute(pct);
 
-        // Defer-clear so the same preset can be re-selected and the dropdown
-        // doesn't show a stale highlight when scale changes externally.
+        
         Dispatcher.InvokeAsync(() => cb.SelectedItem = null,
             System.Windows.Threading.DispatcherPriority.Background);
     }
@@ -403,7 +421,7 @@ public partial class MainWindow : Window
     {
         if (e.Key == Key.Enter)
         {
-            _vm.Search.SearchCommand.Execute(null);
+            _vm.Search?.SearchCommand.Execute(null);
             e.Handled = true;
         }
         else if (e.Key == Key.Escape)

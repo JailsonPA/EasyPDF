@@ -18,8 +18,7 @@ internal static class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
-    // Notifies the Windows shell that file associations changed so Explorer
-    // refreshes icons and "Open with" lists without needing a logoff/reboot.
+  
     [DllImport("shell32.dll")]
     internal static extern void SHChangeNotify(int wEventId, int uFlags, IntPtr dwItem1, IntPtr dwItem2);
 }

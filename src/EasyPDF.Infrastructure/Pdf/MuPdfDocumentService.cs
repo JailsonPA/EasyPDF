@@ -3,34 +3,24 @@ using EasyPDF.Core.Interfaces;
 using EasyPDF.Core.Models;
 using Microsoft.Extensions.Logging;
 using MuPDFCore;
+using MuPDFCore.StructuredText;
+using System.Buffers;
+using System.Security.Cryptography;
 
 namespace EasyPDF.Infrastructure.Pdf;
 
-/// <summary>
-/// Opens PDF files using MuPDFCore and exposes their metadata.
-///
-/// Thread-safety contract:
-///   - OpenCore / Close hold the WRITE lock — only one at a time, no concurrent readers.
-///   - UseDocument holds a READ lock — multiple concurrent renders are allowed, but
-///     Close() will block until all active reads finish before disposing the native document.
-///   - This prevents the use-after-free crash that occurred when Close() disposed
-///     MuPDFDocument while RenderCore() / SearchPage() were still executing it.
-///
-/// All native MuPDF calls are routed through MuPdfDispatcher so they always run on
-/// a 32 MB stack thread, preventing STATUS_STACK_BUFFER_OVERRUN (0xC0000409) crashes
-/// that occur when complex PDFs overflow the default 1 MB thread-pool stack.
-/// </summary>
 public sealed class MuPdfDocumentService : IPdfDocumentService
 {
     private readonly ILogger<MuPdfDocumentService> _logger;
     private readonly IPageCache _cache;
     private readonly MuPdfDispatcher _dispatcher;
 
-    // NoRecursion: acquiring a second lock on the same thread is a bug, not a feature.
-    private readonly ReaderWriterLockSlim _docLock = new(LockRecursionPolicy.NoRecursion);
-    private static readonly TimeSpan WriteLockTimeout = TimeSpan.FromSeconds(5);
+    // Single mutex serializes all native MuPDF calls on this document. MuPDFCore is not
+    // thread-safe for concurrent operations on the same MuPDFDocument, so even read-style
+    // operations (rendering, text extraction, search) must run one at a time.
+    private readonly object _docLock = new();
+    private static readonly TimeSpan AcquireTimeout = TimeSpan.FromSeconds(5);
 
-    // volatile so IsOpen reads outside the lock see the freshest value on all CPUs.
     private volatile MuPDFDocument? _muDoc;
     private MuPDFContext? _context;
 
@@ -57,27 +47,20 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
         return CurrentDocument!;
     }
 
-    /// <summary>
-    /// Gives callers (render service, search service) safe read-locked access to the
-    /// native MuPDFDocument. The callback executes while the read lock is held, so
-    /// Close() cannot dispose the document until every active callback returns.
-    /// </summary>
     internal T UseDocument<T>(Func<MuPDFDocument, T> callback)
     {
-        _docLock.EnterReadLock();
-        try
+        lock (_docLock)
         {
             if (_muDoc is null)
                 throw new InvalidOperationException("No PDF document is currently open.");
             return callback(_muDoc);
         }
-        finally { _docLock.ExitReadLock(); }
     }
 
     private void OpenCore(string filePath, string? password)
     {
-        if (!_docLock.TryEnterWriteLock(WriteLockTimeout))
-            throw new TimeoutException("Could not acquire write lock to open PDF — a render operation may be stuck.");
+        if (!Monitor.TryEnter(_docLock, AcquireTimeout))
+            throw new TimeoutException("Could not acquire document lock to open PDF — an operation may be stuck.");
 
         try
         {
@@ -85,16 +68,13 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
 
             _logger.LogInformation("Opening PDF: {Path}", filePath);
             _context = new MuPDFContext();
-            // Maximum anti-aliasing (0–8 scale). MuPDF default is lower and produces
-            // visibly jaggy text and edges — setting all three to 8 eliminates this.
+          
             _context.AntiAliasing        = 8;
             _context.TextAntiAliasing    = 8;
             _context.GraphicsAntiAliasing = 8;
             _muDoc   = new MuPDFDocument(_context, filePath);
 
-            // Handle password-protected PDFs.
-            // MuPDFDocument opens even for encrypted files; we must call TryUnlock
-            // before accessing pages, otherwise BuildPageList will produce corrupt data.
+          
             if (_muDoc.EncryptionState == EncryptionState.Encrypted)
             {
                 bool unlocked = !string.IsNullOrEmpty(password) && _muDoc.TryUnlock(password);
@@ -116,29 +96,31 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
                 TableOfContents: toc,
                 PdfVersion:      ReadPdfVersion(filePath),
                 IsEncrypted:     _muDoc.EncryptionState == EncryptionState.Unlocked,
-                IsRestricted:    _muDoc.RestrictionState == RestrictionState.Restricted);
+                IsRestricted:    _muDoc.RestrictionState == RestrictionState.Restricted)
+            {
+                ContentHash  = TryComputeContentHash(filePath),
+                HasTextLayer = ProbeTextLayer(),
+            };
 
             _logger.LogInformation("Opened {Pages} pages", CurrentDocument.PageCount);
         }
         catch
         {
-            // CloseCore disposes both _context and _muDoc, leaving the service clean
-            // so the next open attempt can succeed.
+          
             CloseCore();
             throw;
         }
-        finally { _docLock.ExitWriteLock(); }
+        finally { Monitor.Exit(_docLock); }
     }
 
     public void Close()
     {
-        if (!_docLock.TryEnterWriteLock(WriteLockTimeout))
-            throw new TimeoutException("Could not acquire write lock to close PDF — a render operation may be stuck.");
+        if (!Monitor.TryEnter(_docLock, AcquireTimeout))
+            throw new TimeoutException("Could not acquire document lock to close PDF — an operation may be stuck.");
         try { CloseCore(); }
-        finally { _docLock.ExitWriteLock(); }
+        finally { Monitor.Exit(_docLock); }
     }
 
-    // Must only be called while the write lock is held.
     private void CloseCore()
     {
         _cache.Clear();
@@ -162,6 +144,42 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
         return list;
     }
 
+    /// Samples up to the first 5 pages and counts extractable characters in their structured
+    /// text. Returns true if any sampled page has more than a handful of characters — anything
+    /// less is likely just a page number or stray glyph, not a real text layer. The user-visible
+    /// effect: scanned PDFs (image-only) and Canva-style vector-outlined PDFs both come back
+    /// false here, allowing the UI to show a "no text layer" banner instead of silently failing
+    /// when the user tries to select/search/highlight.
+    private bool ProbeTextLayer()
+    {
+        if (_muDoc is null) return false;
+
+        const int MinCharsToConsiderTextual = 20;
+        int pagesToSample = Math.Min(_muDoc.Pages.Count, 5);
+
+        for (int i = 0; i < pagesToSample; i++)
+        {
+            try
+            {
+                using var stp = _muDoc.GetStructuredTextPage(i, false, StructuredTextFlags.None);
+                int chars = 0;
+                foreach (var block in stp)
+                {
+                    foreach (var line in block)
+                    {
+                        chars += line.Count;
+                        if (chars > MinCharsToConsiderTextual) return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Text-layer probe failed on page {Page} — treating as missing", i);
+            }
+        }
+        return false;
+    }
+
     private static IReadOnlyList<PdfLink> ExtractLinks(MuPDFPage page, float originX, float originY)
     {
         try
@@ -178,7 +196,6 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
                                        a.X1 - a.X0,    a.Y1 - a.Y0);
                 if (area.Width <= 0 || area.Height <= 0) continue;
 
-                // PageNumber is the overall (chapter-independent) 0-based page index.
                 PdfLinkDestination? dest = link.Destination switch
                 {
                     MuPDFInternalLinkDestination d => new PdfLinkDestination.Internal(d.PageNumber),
@@ -202,8 +219,7 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
             var children = item.Children is not null
                 ? BuildTocFromItems(item.Children, 1)
                 : [];
-            // PageNumber is the 0-based absolute page index in the document.
-            // Page is chapter-relative and only differs for reflowable formats (EPUB).
+            
             list.Add(new TocEntry(item.Title ?? string.Empty, item.PageNumber, 0, children));
         }
         return list;
@@ -223,20 +239,51 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
         return list;
     }
 
+    /// SHA-256 of up to the first 1 MB of the file. Stable across renames/moves and cheap
+    /// enough to compute on every Open (~5–15 ms on SSD). Returns null on I/O failure —
+    /// callers fall back to path-only matching.
+    private static string? TryComputeContentHash(string filePath)
+    {
+        try
+        {
+            const int sampleSize = 1024 * 1024;
+            using var stream = File.OpenRead(filePath);
+            int toRead = (int)Math.Min(sampleSize, stream.Length);
+            if (toRead <= 0) return null;
+
+            var rented = ArrayPool<byte>.Shared.Rent(toRead);
+            try
+            {
+                int read = stream.Read(rented, 0, toRead);
+                Span<byte> hash = stackalloc byte[32];
+                SHA256.HashData(rented.AsSpan(0, read), hash);
+                return Convert.ToHexString(hash);
+            }
+            finally { ArrayPool<byte>.Shared.Return(rented); }
+        }
+        catch { return null; }
+    }
+
     private static string ReadPdfVersion(string filePath)
     {
         try
         {
-            Span<byte> buf = stackalloc byte[16];
+            Span<byte> buf = stackalloc byte[1024];
             using var f = File.OpenRead(filePath);
             int read = f.Read(buf);
-            string header = System.Text.Encoding.ASCII.GetString(buf[..read]);
-            if (header.StartsWith("%PDF-", StringComparison.Ordinal))
-            {
-                int end = header.IndexOfAny(['\r', '\n', ' '], 5);
-                string ver = end > 5 ? header[5..end] : header[5..];
-                return "PDF " + ver.Trim();
-            }
+            ReadOnlySpan<byte> data = buf[..read];
+
+            // Search for "%PDF-" anywhere in the first KB. Some PDFs carry a UTF-8 BOM, a
+            // signed-document wrapper, or other prefix bytes before the canonical header.
+            int markerIdx = data.IndexOf("%PDF-"u8);
+            if (markerIdx < 0) return "Unknown";
+
+            var afterMarker = data[(markerIdx + 5)..];
+            int delimIdx = afterMarker.IndexOfAny((byte)'\r', (byte)'\n', (byte)' ');
+            var versionBytes = delimIdx >= 0
+                ? afterMarker[..delimIdx]
+                : afterMarker[..Math.Min(8, afterMarker.Length)];
+            return "PDF " + System.Text.Encoding.ASCII.GetString(versionBytes).Trim();
         }
         catch { }
         return "Unknown";
@@ -245,6 +292,5 @@ public sealed class MuPdfDocumentService : IPdfDocumentService
     public async ValueTask DisposeAsync()
     {
         await _dispatcher.RunAsync(Close);
-        _docLock.Dispose();
     }
 }

@@ -41,8 +41,7 @@ public sealed class MuPdfSearchService : ISearchService
         {
             progress?.Report(i);
 
-            // Route through the dispatcher — GetStructuredTextPage parses the content
-            // stream and can recurse deeply enough to overflow a 1 MB thread-pool stack.
+           
             var results = await _dispatcher.RunAsync(() => SearchPage(i, needle), ct);
 
             foreach (var r in results)
@@ -57,6 +56,10 @@ public sealed class MuPdfSearchService : ISearchService
             var results = new List<SearchResult>();
             try
             {
+                var bounds = doc.Pages[pageIndex].Bounds;
+                float ox = bounds.X0;
+                float oy = bounds.Y0;
+
                 using var stp = doc.GetStructuredTextPage(pageIndex, false, StructuredTextFlags.None);
 
                 int matchIdx = 0;
@@ -69,7 +72,7 @@ public sealed class MuPdfSearchService : ISearchService
                         float y = Math.Min(quad.UpperLeft.Y, quad.UpperRight.Y);
                         float w = Math.Max(quad.UpperRight.X, quad.LowerRight.X) - x;
                         float h = Math.Max(quad.LowerLeft.Y, quad.LowerRight.Y) - y;
-                        quads.Add(new PdfRect(x, y, w, h));
+                        quads.Add(new PdfRect(x - ox, y - oy, w, h));
                     }
                     results.Add(new SearchResult(pageIndex, matchIdx++, needle.ToString(), quads));
                 }

@@ -49,17 +49,15 @@ public sealed partial class SidebarViewModel : ObservableObject, IDisposable
 
     public async Task LoadDocumentAsync(PdfDocument document, CancellationToken ct = default)
     {
-        // Cancel any in-progress thumbnail renders for the previous document.
         _thumbCts.Cancel();
         _thumbCts.Dispose();
         _thumbCts = new CancellationTokenSource();
 
-        // Populate thumbnail VMs with no rendered content — ThumbnailControl renders
-        // each thumbnail lazily when its container enters the visible viewport.
+       
         _thumbIndex.Clear();
         var thumbVms = document.Pages.Select(p =>
         {
-            var vm = new ThumbnailItemViewModel(p.Index);
+            var vm = new ThumbnailItemViewModel(p.Index, p.WidthPt, p.HeightPt);
             vm.NavigateRequested += (_, item) => PageNavigationRequested?.Invoke(this, item.PageIndex);
             _thumbIndex[p.Index] = vm;
             return vm;
@@ -76,11 +74,7 @@ public sealed partial class SidebarViewModel : ObservableObject, IDisposable
         await LoadBookmarksAsync(document.FilePath, ct);
     }
 
-    /// <summary>
-    /// Called by ThumbnailControl when its container enters the visible viewport.
-    /// Mirrors PdfViewerViewModel.OnPageBecameVisibleAsync — one render per visible slot,
-    /// no pre-loading of off-screen thumbnails, no semaphore starvation.
-    /// </summary>
+
     public async Task OnThumbnailBecameVisibleAsync(int pageIndex, double dpiScale = 1.0, CancellationToken ct = default)
     {
         if (!_thumbIndex.TryGetValue(pageIndex, out var thumb) || thumb.RenderedPage is not null) return;
@@ -88,9 +82,7 @@ public sealed partial class SidebarViewModel : ObservableObject, IDisposable
         try
         {
             thumb.IsLoading = true;
-            // 128 px matches the effective display width of a portrait A4 page inside
-            // the 140×180 container (Stretch=Uniform clamps height at ~180 → width ≈ 127 px).
-            // Rendering at 160 was wasteful and caused an unnecessary Stretch downscale.
+         
             thumb.RenderedPage = await _renderService.RenderThumbnailAsync(pageIndex, 128, dpiScale, ct);
         }
         catch (OperationCanceledException) { }
@@ -138,7 +130,11 @@ public sealed partial class SidebarViewModel : ObservableObject, IDisposable
     public void SetSelectedPage(int pageIndex)
     {
         if (_selectedThumbIndex >= 0 && _thumbIndex.TryGetValue(_selectedThumbIndex, out var prev))
+        {
             prev.IsSelected = false;
+            prev.ViewportTopFrac    = 0;
+            prev.ViewportHeightFrac = 1;
+        }
 
         if (_thumbIndex.TryGetValue(pageIndex, out var next))
         {
@@ -147,6 +143,15 @@ public sealed partial class SidebarViewModel : ObservableObject, IDisposable
         }
 
         _selectedThumbIndex = pageIndex;
+    }
+
+    public void SetViewport(int pageIndex, double topFrac, double heightFrac)
+    {
+        if (_thumbIndex.TryGetValue(pageIndex, out var thumb))
+        {
+            thumb.ViewportTopFrac    = topFrac;
+            thumb.ViewportHeightFrac = heightFrac;
+        }
     }
 
     [RelayCommand]

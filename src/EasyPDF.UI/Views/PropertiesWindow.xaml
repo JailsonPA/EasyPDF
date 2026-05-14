@@ -16,7 +16,6 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Title bar -->
         <Grid Grid.Row="0" Background="{DynamicResource WindowChromeBrush}"
               MouseLeftButtonDown="OnTitleBarMouseDown">
             <TextBlock Text="File Properties"
@@ -28,11 +27,9 @@
                     Click="CloseClick" />
         </Grid>
 
-        <!-- Content -->
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <StackPanel Margin="24,16,24,20">
 
-                <!-- GENERAL -->
                 <TextBlock Text="GENERAL" FontSize="11" FontWeight="SemiBold"
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            Margin="0,0,0,8" />
@@ -75,7 +72,6 @@
 
                 <Separator Background="{DynamicResource BorderBrush}" Margin="0,0,0,16" />
 
-                <!-- DOCUMENT -->
                 <TextBlock Text="DOCUMENT" FontSize="11" FontWeight="SemiBold"
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            Margin="0,0,0,8" />
@@ -103,7 +99,6 @@
 
                 <Separator Background="{DynamicResource BorderBrush}" Margin="0,0,0,16" />
 
-                <!-- SECURITY -->
                 <TextBlock Text="SECURITY" FontSize="11" FontWeight="SemiBold"
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            Margin="0,0,0,8" />
@@ -131,7 +126,6 @@
 
                 <Separator Background="{DynamicResource BorderBrush}" Margin="0,0,0,16" />
 
-                <!-- DATES -->
                 <TextBlock Text="DATES" FontSize="11" FontWeight="SemiBold"
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            Margin="0,0,0,8" />
@@ -157,7 +151,6 @@
                                Style="{DynamicResource PropValueStyle}" />
                 </Grid>
 
-                <!-- Close button -->
                 <Button Content="Close" Style="{DynamicResource AccentButtonStyle}"
                         HorizontalAlignment="Right" Margin="0,24,0,0"
                         Padding="20,6" Click="CloseClick" />

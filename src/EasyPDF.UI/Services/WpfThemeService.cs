@@ -1,37 +1,22 @@
 using EasyPDF.Core.Interfaces;
 using EasyPDF.Core.Models;
-using EasyPDF.Infrastructure.Storage;
-using System.IO;
-using System.Text.Json;
 using System.Windows;
 
 namespace EasyPDF.UI.Services;
 
 public sealed class WpfThemeService : IThemeService
 {
-    // AppDataPaths.SettingsFile is the single source of truth for this path.
-    private static string SettingsPath => AppDataPaths.SettingsFile;
+    private readonly IPreferencesRepository _prefsRepo;
 
     public AppTheme CurrentTheme { get; private set; } = AppTheme.Dark;
     public event EventHandler<AppTheme>? ThemeChanged;
 
-    public void LoadSaved()
+    public WpfThemeService(IPreferencesRepository prefsRepo)
     {
-        try
-        {
-            if (File.Exists(SettingsPath))
-            {
-                var json = File.ReadAllText(SettingsPath);
-                var settings = JsonSerializer.Deserialize<AppSettings>(json);
-                if (settings is not null)
-                    ApplyTheme(settings.Theme);
-                return;
-            }
-        }
-        catch { /* use default */ }
-
-        ApplyTheme(AppTheme.Dark);
+        _prefsRepo = prefsRepo;
     }
+
+    public void LoadSaved() => ApplyTheme(_prefsRepo.Get().Theme);
 
     public void ApplyTheme(AppTheme theme)
     {
@@ -47,7 +32,6 @@ public sealed class WpfThemeService : IThemeService
 
         var dicts = System.Windows.Application.Current.Resources.MergedDictionaries;
 
-        // Replace only the colour palette dict; keep ControlStyles
         var existing = dicts.FirstOrDefault(d =>
             d.Source?.OriginalString.Contains("Theme.xaml") == true);
 
@@ -63,7 +47,9 @@ public sealed class WpfThemeService : IThemeService
             dicts.Insert(0, newDict);
         }
 
-        PersistAsync(theme);
+        // Persist via the central preferences repo so all settings (theme + zoom + ink + ...)
+        // share a single file and we never accidentally overwrite each other's keys.
+        _ = _prefsRepo.SaveAsync(_prefsRepo.Get() with { Theme = theme });
         ThemeChanged?.Invoke(this, theme);
     }
 
@@ -71,7 +57,6 @@ public sealed class WpfThemeService : IThemeService
     {
         try
         {
-            // WPF's SystemParameters.HighContrast reflects the Windows HC accessibility setting.
             if (System.Windows.SystemParameters.HighContrast)
                 return AppTheme.HighContrast;
 
@@ -82,17 +67,4 @@ public sealed class WpfThemeService : IThemeService
         }
         catch { return AppTheme.Dark; }
     }
-
-    private static async void PersistAsync(AppTheme theme)
-    {
-        try
-        {
-            // AppDataPaths.SettingsFile already ensures the directory exists.
-            await File.WriteAllTextAsync(SettingsPath,
-                JsonSerializer.Serialize(new AppSettings(theme)));
-        }
-        catch { /* non-critical */ }
-    }
-
-    private sealed record AppSettings(AppTheme Theme);
 }

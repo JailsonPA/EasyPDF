@@ -74,7 +74,12 @@ public sealed class JsonBookmarkRepository : IBookmarkRepository
 
     private async Task SaveAsync(List<Bookmark> list, CancellationToken ct)
     {
-        await using var s = File.Create(_filePath);
-        await JsonSerializer.SerializeAsync(s, list, _opts, ct);
+        // Atomic write: serialize to a sibling .tmp file, then rename over the target.
+        var tempPath = _filePath + ".tmp";
+        await using (var s = File.Create(tempPath))
+        {
+            await JsonSerializer.SerializeAsync(s, list, _opts, ct);
+        }
+        File.Move(tempPath, _filePath, overwrite: true);
     }
 }

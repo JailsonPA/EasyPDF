@@ -29,7 +29,12 @@ public sealed class JsonRecentFilesRepository : IRecentFilesRepository
         try
         {
             var list = (await LoadAsync(ct)).ToList();
-            list.RemoveAll(f => f.FilePath.Equals(file.FilePath, StringComparison.OrdinalIgnoreCase));
+            // Dedup by either path OR matching content hash. The hash branch lets a renamed
+            // file replace its old entry instead of creating a duplicate "ghost" pointing at
+            // a now-missing path.
+            list.RemoveAll(f =>
+                f.FilePath.Equals(file.FilePath, StringComparison.OrdinalIgnoreCase) ||
+                (file.ContentHash is not null && f.ContentHash == file.ContentHash));
             list.Insert(0, file);
             if (list.Count > MaxEntries)
                 list.RemoveRange(MaxEntries, list.Count - MaxEntries);
@@ -67,7 +72,13 @@ public sealed class JsonRecentFilesRepository : IRecentFilesRepository
 
     private async Task SaveAsync(List<RecentFile> list, CancellationToken ct)
     {
-        await using var stream = File.Create(_filePath);
-        await JsonSerializer.SerializeAsync(stream, list, _opts, ct);
+        // Atomic write: serialize to a sibling .tmp file, then rename over the target.
+        // A crash during Create→Serialize previously truncated the original to zero bytes.
+        var tempPath = _filePath + ".tmp";
+        await using (var stream = File.Create(tempPath))
+        {
+            await JsonSerializer.SerializeAsync(stream, list, _opts, ct);
+        }
+        File.Move(tempPath, _filePath, overwrite: true);
     }
 }

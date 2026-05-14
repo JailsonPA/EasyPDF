@@ -6,6 +6,5 @@ public interface IPageCache
 {
     RenderedPage? Get(string key);
     void Set(string key, RenderedPage page);
-    void Invalidate(string documentPath);
     void Clear();
 }

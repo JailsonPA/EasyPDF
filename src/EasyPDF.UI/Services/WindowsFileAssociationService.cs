@@ -3,10 +3,6 @@ using System.IO;
 
 namespace EasyPDF.UI.Services;
 
-/// <summary>
-/// Registers EasyPDF in HKCU so it appears in Windows "Open with" for .pdf files.
-/// Uses HKCU — no administrator rights required.
-/// </summary>
 internal static class WindowsFileAssociationService
 {
     private const string ProgId     = "EasyPDF.Document";
@@ -19,7 +15,6 @@ internal static class WindowsFileAssociationService
         {
             string exe = GetExePath();
 
-            // Skip if already registered for the same exe path.
             using (var meta = Registry.CurrentUser.OpenSubKey(LastExeKey))
             {
                 if (meta?.GetValue("RegisteredExe") is string last && last == exe)
@@ -30,7 +25,6 @@ internal static class WindowsFileAssociationService
             RegisterApplication(exe);
             PersistRegisteredPath(exe);
 
-            // Notify Explorer so "Open with" list refreshes immediately.
             const int SHCNE_ASSOCCHANGED = 0x08000000;
             NativeMethods.SHChangeNotify(SHCNE_ASSOCCHANGED, 0, IntPtr.Zero, IntPtr.Zero);
         }
@@ -40,7 +34,6 @@ internal static class WindowsFileAssociationService
         }
     }
 
-    // ProgID used when the user sets EasyPDF as the default PDF viewer.
     private static void RegisterProgId(string exe)
     {
         using var progId = Registry.CurrentUser.CreateSubKey($@"Software\Classes\{ProgId}");
@@ -55,12 +48,10 @@ internal static class WindowsFileAssociationService
         using var cmd = open.CreateSubKey("command");
         cmd.SetValue("", $"\"{exe}\" \"%1\"");
 
-        // Link .pdf extension to this ProgID for the "Open with" list.
         using var pdfWith = Registry.CurrentUser.CreateSubKey(@"Software\Classes\.pdf\OpenWithProgids");
         pdfWith.SetValue(ProgId, Array.Empty<byte>(), RegistryValueKind.None);
     }
 
-    // Application registration: shows up in "Open with → Choose another app".
     private static void RegisterApplication(string exe)
     {
         using var appKey = Registry.CurrentUser.CreateSubKey(AppExeKey);

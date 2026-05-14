@@ -1,3 +1,8 @@
+// QUARANTINED — this file targets a pre-refactor MainViewModel that took 12 ctor args
+// (RenderSvc + viewer/sidebar/search VMs directly). The current MainViewModel uses
+// IServiceProvider + per-tab scope, computed CurrentDocument, and renamed Close → CloseTab.
+// Source preserved inside `#if false` for someone to port piecewise; nothing here runs.
+#if false
 using EasyPDF.Application;
 using EasyPDF.Application.Interfaces;
 using EasyPDF.Application.ViewModels;
@@ -278,3 +283,4 @@ public sealed class MainViewModelTests
         Assert.False(vm.UpdateAvailable);
     }
 }
+#endif

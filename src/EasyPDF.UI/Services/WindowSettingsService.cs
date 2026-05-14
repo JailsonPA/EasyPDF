@@ -4,7 +4,6 @@ using System.Text.Json;
 
 namespace EasyPDF.UI.Services;
 
-/// <summary>Persists window placement (size, position, state) across sessions.</summary>
 internal static class WindowSettingsService
 {
     private static readonly JsonSerializerOptions _opts = new() { WriteIndented = true };

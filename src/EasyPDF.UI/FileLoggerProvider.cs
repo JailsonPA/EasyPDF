@@ -4,12 +4,7 @@ using System.Text;
 
 namespace EasyPDF.UI;
 
-/// <summary>
-/// Writes log entries to a daily rolling file under AppData\EasyPDF\logs\.
-/// Filtering (Warning+) is applied by the logging infrastructure via AddFilter,
-/// so IsEnabled always returns true here and lets the framework decide.
-/// Thread-safety is achieved with a shared file lock across all category loggers.
-/// </summary>
+
 internal sealed class FileLoggerProvider : ILoggerProvider
 {
     private readonly string _logDirectory;
@@ -30,7 +25,6 @@ internal sealed class FileLoggerProvider : ILoggerProvider
     {
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
-        // Level filtering is done by the logging infrastructure (AddFilter); always true here.
         public bool IsEnabled(LogLevel logLevel) => true;
 
         public void Log<TState>(

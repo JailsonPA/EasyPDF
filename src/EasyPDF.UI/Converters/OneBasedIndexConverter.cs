@@ -3,10 +3,6 @@ using System.Windows.Data;
 
 namespace EasyPDF.UI.Converters;
 
-/// <summary>
-/// Converts a 0-based int index to a 1-based string for display in page-number inputs,
-/// and converts back from a 1-based string to a 0-based int on LostFocus.
-/// </summary>
 [ValueConversion(typeof(int), typeof(string))]
 public sealed class OneBasedIndexConverter : IValueConverter
 {

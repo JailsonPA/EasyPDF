@@ -2,10 +2,8 @@ using System.Windows;
 
 namespace EasyPDF.UI.Helpers;
 
-/// <summary>
 /// Attached properties that build a <see cref="RichToolTip"/> and assign it to
-/// the element's ToolTip — use Tip.Title / Tip.Keys instead of plain ToolTip="…".
-/// </summary>
+
 public static class Tip
 {
     public static readonly DependencyProperty TitleProperty =

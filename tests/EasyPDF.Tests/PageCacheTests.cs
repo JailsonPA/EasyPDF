@@ -104,21 +104,6 @@ public sealed class PageCacheTests
     }
 
     [Fact]
-    public void Invalidate_RemovesMatchingKeys_KeepsOthers()
-    {
-        var cache = MakeCache();
-        cache.Set("/docs/a.pdf:0:1.0", MakePage(10, 10));
-        cache.Set("/docs/a.pdf:1:1.0", MakePage(10, 10));
-        cache.Set("/other/b.pdf:0:1.0", MakePage(10, 10));
-
-        cache.Invalidate("/docs/a.pdf");
-
-        Assert.Null(cache.Get("/docs/a.pdf:0:1.0"));
-        Assert.Null(cache.Get("/docs/a.pdf:1:1.0"));
-        Assert.NotNull(cache.Get("/other/b.pdf:0:1.0")); // untouched
-    }
-
-    [Fact]
     public void Clear_RemovesAllEntries()
     {
         var cache = MakeCache();

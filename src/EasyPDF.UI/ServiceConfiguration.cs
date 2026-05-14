@@ -23,52 +23,54 @@ internal static class ServiceConfiguration
 
         var services = new ServiceCollection();
 
-        // Logging:
-        //   - Debug provider  → all levels (filtered by appsettings.json per category)
-        //   - File provider   → Warning+ only (independent of category config)
-        //     Logs land in %AppData%\EasyPDF\logs\easypdf-YYYY-MM-DD.log
         var logDir = AppDataPaths.LogsDirectory;
-
         services.AddLogging(b => b
             .SetMinimumLevel(LogLevel.Debug)
             .AddDebug()
             .AddProvider(new FileLoggerProvider(logDir))
             .AddFilter<FileLoggerProvider>(null, LogLevel.Warning));
 
-        // Infrastructure — singletons share state across the app lifetime
+     
+        services.AddSingleton(_ => new MuPdfDispatcher(workerCount: 6, stackBytes: 8 * 1024 * 1024));
 
-        // Shared pool of large-stack threads for all MuPDF native calls.
-        // 6 threads × 32 MB stack — covers 4 page renders + 2 thumbnail renders concurrently.
-        services.AddSingleton(_ => new MuPdfDispatcher(workerCount: 6, stackBytes: 32 * 1024 * 1024));
 
-        services.AddSingleton<IPageCache>(sp =>
+        services.AddScoped<IPageCache>(sp =>
         {
             int maxMb = config.GetValue<int>("Cache:MaxMegabytes", 512);
             return new PageCache(sp.GetRequiredService<ILogger<PageCache>>(), maxMb);
         });
-        services.AddSingleton<MuPdfDocumentService>();         // concrete needed by render + search
-        services.AddSingleton<IPdfDocumentService>(sp => sp.GetRequiredService<MuPdfDocumentService>());
-        services.AddSingleton<MuPdfRenderService>();
-        services.AddSingleton<IPdfRenderService>(sp => sp.GetRequiredService<MuPdfRenderService>());
-        services.AddSingleton<ISearchService, MuPdfSearchService>();
-        services.AddSingleton<ITextExtractionService, MuPdfTextExtractionService>();
+        services.AddScoped<MuPdfDocumentService>();
+        services.AddScoped<IPdfDocumentService>(sp => sp.GetRequiredService<MuPdfDocumentService>());
+        services.AddScoped<MuPdfRenderService>();
+        services.AddScoped<IPdfRenderService>(sp => sp.GetRequiredService<MuPdfRenderService>());
+        services.AddScoped<ISearchService, MuPdfSearchService>();
+        services.AddScoped<ITextExtractionService, MuPdfTextExtractionService>();
+        services.AddScoped<IPrintService, WpfPrintService>();
+        services.AddScoped<IExportService, WpfExportService>();
+        services.AddScoped<IPdfExportService, MuPdfExportService>();
+        services.AddScoped<IPdfAnnotationWriter, PdfSharpAnnotationWriter>();
+        services.AddScoped<PdfViewerViewModel>();
+        services.AddScoped<SidebarViewModel>();
+        services.AddScoped<SearchViewModel>();
 
-        // Storage
+        // ── Singleton storage ──────────────────────────────────────────────────
         services.AddSingleton<IBookmarkRepository>(_ => new JsonBookmarkRepository(AppDataPaths.BookmarksFile));
+        services.AddSingleton<IAnnotationRepository>(_ =>
+            new SqliteAnnotationRepository(
+                AppDataPaths.AnnotationsDb,
+                legacyJsonPathForMigration: AppDataPaths.AnnotationsFile));
         services.AddSingleton<IRecentFilesRepository>(_ => new JsonRecentFilesRepository(AppDataPaths.RecentFilesFile));
+        services.AddSingleton<IPreferencesRepository>(_ => new JsonPreferencesRepository(AppDataPaths.SettingsFile));
 
-        // App settings (values from appsettings.json with safe defaults)
         services.AddSingleton(_ =>
         {
             int largeMb = config.GetValue<int>("LargeFileSizeMb", 500);
             return new AppSettings { LargeFileSizeBytes = (long)largeMb * 1024 * 1024 };
         });
 
-        // UI Services
+        // ── Singleton UI services ──────────────────────────────────────────────
         services.AddSingleton<IThemeService, WpfThemeService>();
         services.AddSingleton<IDialogService, WpfDialogService>();
-        services.AddSingleton<IPrintService, WpfPrintService>();
-        services.AddSingleton<IExportService, WpfExportService>();
         services.AddSingleton<IUpdateService>(_ =>
         {
             string owner = config.GetValue<string>("GitHub:Owner") ?? "JailsonPA";
@@ -79,10 +81,7 @@ internal static class ServiceConfiguration
                 : new NoOpUpdateService();
         });
 
-        // ViewModels
-        services.AddSingleton<SearchViewModel>();
-        services.AddSingleton<SidebarViewModel>();
-        services.AddSingleton<PdfViewerViewModel>();
+ 
         services.AddSingleton<MainViewModel>();
 
         return services.BuildServiceProvider();

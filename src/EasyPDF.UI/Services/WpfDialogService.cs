@@ -55,4 +55,16 @@ public sealed class WpfDialogService : IDialogService
         };
         return Task.FromResult(dlg.ShowDialog() == true ? dlg.FileName : null);
     }
+
+    public Task<string?> SavePdfFileAsync(string suggestedName)
+    {
+        var dlg = new SaveFileDialog
+        {
+            Title      = "Exportar PDF com Anotações",
+            FileName   = suggestedName,
+            Filter     = "PDF File (*.pdf)|*.pdf",
+            DefaultExt = ".pdf"
+        };
+        return Task.FromResult(dlg.ShowDialog() == true ? dlg.FileName : null);
+    }
 }
